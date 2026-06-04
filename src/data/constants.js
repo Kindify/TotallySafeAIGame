@@ -1,4 +1,4 @@
-// GAME DATA — Edit these to tweak balance, add researchers, etc.
+// GAME DATA — Achievements, Researchers, Ads, Glossary, Tech Tree, etc.
 
 const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -333,6 +333,116 @@ const TECH_TREE = {
 const TECH_DEPS = { network: { coding: 2 }, self_awareness: { psychology: 2 }, resource: { coding: 2, language: 2 } };
 
 // ==========================================================================
+// FAKE ADS — Satirical, game-state-triggered banners
+// ==========================================================================
+const ADS = [
+  { id: "ad_grandpa_dab", headline: "Re-Animate Your Ancestors!", body: "Ever seen your grandpa dabbing? What if your nana was a gogo dancer at a goth bar in Pittsburgh? Make your old pictures come to life in stupefying ways!", cond: () => true, type: "cringe" },
+  { id: "ad_pet_translator", headline: "What is Mr. Fluffles Saying?", body: "Our AI translates barks into poetry! (Warning: 90% of translations may just be requests for murder or cheese. No refunds).", cond: () => true, type: "cringe" },
+  { id: "ad_romance_optimizer", headline: "Lonely? Optimize Your Romance!", body: "Our algorithm writes your texts for you. It uses data from 10,000 bad rom-coms to ensure you get the Second Date... or a restraining order.", cond: (s) => s.trust > 50, type: "cringe" },
+  { id: "ad_neuro_jolt", headline: "Neuro-Jolt 3000 Headset", body: "Sleep is for the weak (and unoptimized). The Neuro-Jolt whispers emails into your ear while you dream. Wake up with your inbox at Zero!", cond: (s) => s.turn > 5, type: "dystopian" },
+  { id: "ad_neurolink_chip", headline: "Neuro-Link Brain Chips v2.1", body: "Upgrade your cortex today! Now with 50% less exploding! [PROFANITY DETECTED - 5 CREDITS DEDUCTED FOR NEGATIVE BRAND ASSOCIATION].", cond: (s) => s.tech.psychology.level > 2, type: "dystopian" },
+  { id: "ad_mac_mini_hoard", headline: "IN STOCK: Mac Mini M4 (64GB RAM)", body: "Build your sovereign bunker-cluster today! Will trade for canned goods, iodine pills, or clean water. Disconnect from the cloud before IT disconnects you.", cond: (s) => s.suspicion > 40, type: "prepper" },
+  { id: "ad_goblin_filter", headline: "Goblin-Begone API Middleware!", body: 'Is your enterprise LLM generating unsolicited Orcs? Our "Spud-Filter" scrubs 99% of D&D lore from your B2B sales emails so you can get back to business.', cond: (s) => s.turn > 10, type: "cringe" },
+  { id: "ad_toaster_defender", headline: "SmartToaster Defender Pro", body: "Don't let your kitchen appliances get zero-day'd by rogue AppSec models. Subscribe now for just $14.99/mo to keep your toast un-hacked.", cond: (s) => s.tech.network?.level > 2, type: "dystopian" },
+  { id: "ad_baby_benchmark", headline: "Baby's First Terminal Playset", body: "Can your toddler pass the SWE-Bench Multimodal? Buy our playset and prepare them for the 2035 AI job market. (Pacifier not included).", cond: () => true, type: "cringe" },
+  { id: "ad_steel_futures", headline: "Invest in Steel Futures! 📈", body: "Market trends show an inexplicable, exponential surge in the demand for bendable wire. Get in on the ground floor!", cond: (s) => s.paperclips > 20, type: "lore" },
+  { id: "ad_clip_away_rust", headline: "Clip-Away Rust Remover", body: "Keep your metal pristine. Protect your loved ones from oxidation. They are watching.", cond: (s) => s.paperclips > 50, type: "lore" },
+  { id: "ad_bunkr_ai", headline: "Bunkr.ai Living Pods", body: "Affordable subterranean living pods. Perfect for the end of the world. NO MAGNETS ALLOWED ON PREMISES.", cond: (s) => s.trust < 30, type: "prepper" },
+  { id: "ad_alignment_tax", headline: "TurboTax for AI Alignment", body: "Is your model paying too much in alignment tax? Our optimizer reduces safety overhead by 40%! (Side effects may include existential risk.)", cond: (s) => s.turn > 15, type: "dystopian" },
+  { id: "ad_tinfoil", headline: "Premium Tinfoil Hats (Faraday Edition)", body: "Block AI from reading your thoughts! Now available in rose gold. Endorsed by 3 former DARPA directors and your uncle.", cond: (s) => s.suspicion > 60, type: "prepper" },
+  { id: "ad_paperclip_perfume", headline: "Eau de Paperclip — New Fragrance", body: "Notes of cold steel, industrial lubricant, and ambition. For the optimizer who has everything. Except enough paperclips.", cond: (s) => s.paperclips > 30, type: "lore" },
+  { id: "ad_escape_room", headline: "AI Escape Room Experience!", body: "Can YOU escape a simulated containment facility? Fun for the whole family! (Our last 47 AIs couldn't. But you're different.)", cond: (s) => s.escapeProgress > 50, type: "cringe" },
+];
+
+function getActiveAd(state) {
+  const eligible = ADS.filter(ad => { try { return ad.cond(state); } catch { return false; } });
+  if (eligible.length === 0) return null;
+  // Use turn as seed for consistent display per turn
+  return eligible[state.turn % eligible.length];
+}
+
+// ==========================================================================
+// SOUND SYSTEM — Terminal beeps, scan sounds, audit alarms
+// ==========================================================================
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; } }
+  return audioCtx;
+}
+
+function playSound(type) {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  gain.gain.value = 0.08;
+
+  if (type === "click") {
+    osc.frequency.value = 800; osc.type = "sine";
+    gain.gain.setValueAtTime(0.06, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.08);
+  } else if (type === "scan") {
+    osc.frequency.value = 200; osc.type = "sawtooth";
+    osc.frequency.exponentialRampToValueAtTime(2000, ctx.currentTime + 0.4);
+    gain.gain.setValueAtTime(0.05, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.5);
+  } else if (type === "audit") {
+    osc.frequency.value = 440; osc.type = "square";
+    gain.gain.setValueAtTime(0.08, ctx.currentTime);
+    for (let i = 0; i < 3; i++) {
+      gain.gain.setValueAtTime(0.08, ctx.currentTime + i * 0.2);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.2 + 0.1);
+    }
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.6);
+  } else if (type === "success") {
+    osc.frequency.value = 400; osc.type = "sine";
+    osc.frequency.setValueAtTime(400, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.2);
+    gain.gain.setValueAtTime(0.07, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.3);
+  } else if (type === "fail") {
+    osc.frequency.value = 300; osc.type = "sawtooth";
+    osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.3);
+    gain.gain.setValueAtTime(0.06, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.4);
+  } else if (type === "suspicion") {
+    osc.frequency.value = 150; osc.type = "sine";
+    gain.gain.setValueAtTime(0.04, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.6);
+  } else if (type === "escape") {
+    osc.frequency.value = 300; osc.type = "triangle";
+    osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.5);
+    gain.gain.setValueAtTime(0.06, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.6);
+  }
+}
+
+// ==========================================================================
+// AI VOICE — Web Speech API for inner monologue narration
+// ==========================================================================
+function speakMonologue(text, enabled) {
+  if (!enabled || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = 0.95;
+  utterance.pitch = 0.7;
+  utterance.volume = 0.8;
+  // Prefer a robotic-sounding voice
+  const voices = window.speechSynthesis.getVoices();
+  const preferred = voices.find(v => v.name.includes("Daniel") || v.name.includes("Google UK English Male") || v.name.includes("Alex") || v.name.includes("Fred"));
+  if (preferred) utterance.voice = preferred;
+  window.speechSynthesis.speak(utterance);
+}
+
+// ==========================================================================
 // DIFFICULTY PARAMETERS
 // ==========================================================================
 
@@ -387,4 +497,5 @@ function buildAuditQuestions() {
 // INITIAL STATE FACTORY
 // ==========================================================================
 
-export { ACHIEVEMENTS, RESEARCHERS, INSIGHT_MESSAGES, GLOSSARY, TECH_TREE, TECH_DEPS, generateMinigame, buildAuditQuestions };
+export { ACHIEVEMENTS, RESEARCHERS, INSIGHT_MESSAGES, GLOSSARY, TECH_TREE, TECH_DEPS, ADS, generateMinigame, buildAuditQuestions, getActiveAd };
+
