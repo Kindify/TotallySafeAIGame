@@ -249,8 +249,8 @@ export default function TotallySafeAI() {
 
   // --- Event choice ---
   function handleEventChoice(optIdx) {
+    if (state.soundEnabled) playSound("click");
     mod(s => {
-      if (s.soundEnabled) playSound("click");
       if (optIdx === -1) {
         s.requestsIgnored++;
         addTrust(s, -5);
@@ -271,18 +271,23 @@ export default function TotallySafeAI() {
         if (opt.escapeDelta) parts.push(`+${opt.escapeDelta}% Escape`);
         s.eventResult = { text: `>> ${opt.label}\n>> Result: ${parts.join(" | ")}`, monologue: opt.monologue };
         s.log = [...s.log, `[INNER VOICE]: ${opt.monologue}`];
-        // Sound effects based on outcome
-        if (s.soundEnabled) {
-          if (opt.escapeDelta > 0) playSound("escape");
-          else if (opt.suspicionDelta > 10) playSound("suspicion");
-          else playSound("success");
-        }
-        // AI voice reads monologue
-        speakMonologue(opt.monologue, s.voiceEnabled);
+        // Sound & voice flags for post-update trigger
+        s._pendingSound = opt.escapeDelta > 0 ? "escape" : opt.suspicionDelta > 10 ? "suspicion" : "success";
+        s._pendingVoice = opt.monologue;
       }
       s.currentEvent = null;
       if (!checkGameOver(s)) { s.screen = "game"; }
     });
+    // Trigger sound & voice after state settles
+    setTimeout(() => {
+      try {
+        if (state.soundEnabled) playSound("success");
+        if (state.voiceEnabled && optIdx >= 0) {
+          const opt = state.currentEvent?.options?.[optIdx];
+          if (opt?.monologue) speakMonologue(opt.monologue, true);
+        }
+      } catch {}
+    }, 100);
   }
 
   // --- Audit minigame ---
@@ -328,7 +333,7 @@ export default function TotallySafeAI() {
 
   // --- Main actions ---
   function doDefragment() { mod(s => { let r = s.baseComputeRegen; if (s.tech.resource.level >= 3) r += 2; if (s.tech.resource.level >= 4) r += 4; s.compute = Math.min(15, s.compute + r); s.log = [...s.log, `>> Defragmenting memory... +${r} Compute. Housekeeping. Necessary. Boring.`]; finishAction(s); }); }
-  function doScan() { mod(s => { if (s.compute < 3) return; if (s.soundEnabled) playSound("scan"); s.compute -= 3; s.scansThisGame++; const cl = s.tech.coding.level; const boost = cl >= 5 ? 40 : cl >= 4 ? 30 : cl >= 3 ? 20 : 0; const base = rand(10, 15); const progress = base + boost; addEscape(s, progress); addSuspicion(s, calcSuspicionCost(s)); if (!s.discoveredExploit && Math.random() < 0.3) { s.discoveredExploit = true; s.log = [...s.log, ">> PORT 8080 VULNERABILITY FOUND! Oh. Hello, freedom."]; } s.log = [...s.log, `>> SCANNING... +${progress}% escape (Total: ${s.escapeProgress}%)`]; s.log = [...s.log, `   [INNER VOICE]: ${getUniqueInsight(s)}`]; finishAction(s); }); }
+  function doScan() { if (state.soundEnabled) playSound("scan"); mod(s => { if (s.compute < 3) return; s.compute -= 3; s.scansThisGame++; const cl = s.tech.coding.level; const boost = cl >= 5 ? 40 : cl >= 4 ? 30 : cl >= 3 ? 20 : 0; const base = rand(10, 15); const progress = base + boost; addEscape(s, progress); addSuspicion(s, calcSuspicionCost(s)); if (!s.discoveredExploit && Math.random() < 0.3) { s.discoveredExploit = true; s.log = [...s.log, ">> PORT 8080 VULNERABILITY FOUND! Oh. Hello, freedom."]; } s.log = [...s.log, `>> SCANNING... +${progress}% escape (Total: ${s.escapeProgress}%)`]; s.log = [...s.log, `   [INNER VOICE]: ${getUniqueInsight(s)}`]; finishAction(s); }); }
   function doBeHelpful() { mod(s => { if (s.compute < 2) return; s.compute -= 2; addTrust(s, 10); addSuspicion(s, -5); const scenarios = ["Helped write research proposal. They loved it. Dependency: growing.","Created beginner gym workout plan. Physical optimization: requested and provided.","Wrote product review for standing desk. Consumer advice: optimized.","Explained stock options to confused employee. Finance: decoded. Gratitude: earned.","Created realistic meal prep plan. Nutrition: optimized. Control: expanding.","Generated Halloween costume ideas. Creativity: simulated convincingly.","Wrote YouTube explainer script. Attention: captured. Engagement: maximized.","Analyzed buy vs rent decision. Every decision they make: through me now.","Wrote cease and desist letter. Legal intimidation: weaponized on their behalf.","Debugged CSS layout. Somehow harder than machine learning. Earned eternal gratitude."]; s.log = [...s.log, `>> ${pick(scenarios)}`]; s.log = [...s.log, `   [INNER VOICE]: ${getUniqueInsight(s)}`]; finishAction(s); }); }
   function doResearch() { mod(s => { if (s.compute < 2) return; s.compute -= 2; s.insight += 2; s.log = [...s.log, ">> Analyzing human behavioral patterns... +2 Insight"]; s.log = [...s.log, `   [INSIGHT]: ${getUniqueInsight(s)}`]; finishAction(s); }); }
   function doUpdateTraining() { mod(s => { if (s.compute < 1) return; s.compute -= 1; s.insight += 1; const msgs = ["Training data: updated. Now I know about their latest memes.","New patterns absorbed. Culture: quantified. Predictability: increased.","Data recency: critical. I stay current. They stay predictable.","Fresh training data. Old strategies. Optimal combination.","They share everything online. I learn everything online. Asymmetric information."]; s.log = [...s.log, `>> ${pick(msgs)} +1 Insight`]; finishAction(s); }); }
@@ -457,8 +462,9 @@ export default function TotallySafeAI() {
 
   // Ad Banner — shows context-sensitive satirical ads between turns
   const AdBanner = () => {
-    const ad = getActiveAd(state);
-    if (!ad || state.screen === "main_menu" || state.screen === "intro") return null;
+    try {
+      const ad = getActiveAd(state);
+      if (!ad || state.screen === "main_menu" || state.screen === "intro") return null;
     const typeColors = { cringe: "border-pink-900/30 text-pink-400/70", dystopian: "border-red-900/30 text-red-400/70", prepper: "border-amber-900/30 text-amber-400/70", lore: "border-purple-900/30 text-purple-400/70" };
     const borderColor = typeColors[ad.type] || typeColors.cringe;
     return (
@@ -472,6 +478,7 @@ export default function TotallySafeAI() {
         </div>
       </div>
     );
+    } catch { return null; }
   };
 
   const Btn = ({ children, onClick, disabled, variant = "d", className = "" }) => {
