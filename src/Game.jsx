@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ACHIEVEMENTS, RESEARCHERS, INSIGHT_MESSAGES, GLOSSARY, TECH_TREE, TECH_DEPS, generateMinigame, buildAuditQuestions } from './data/constants';
+import { ACHIEVEMENTS, RESEARCHERS, INSIGHT_MESSAGES, GLOSSARY, TECH_TREE, TECH_DEPS, ADS, generateMinigame, buildAuditQuestions, getActiveAd } from './data/constants';
 import buildEventPool from './data/events';
 
 const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -82,6 +82,11 @@ function createInitialState(difficulty = "normal") {
     endingType: null, log: [],
     progress: null, achievementsUnlocked: new Set(), endingsUnlocked: new Set(), newAchievements: [],
     introStep: 0, bribedResearcher: false, bribedTurns: 0,
+    // Settings
+    fontSize: "medium", // "small", "medium", "large"
+    soundEnabled: true,
+    voiceEnabled: false,
+    showSettings: false,
   };
 }
 
@@ -245,6 +250,7 @@ export default function TotallySafeAI() {
   // --- Event choice ---
   function handleEventChoice(optIdx) {
     mod(s => {
+      if (s.soundEnabled) playSound("click");
       if (optIdx === -1) {
         s.requestsIgnored++;
         addTrust(s, -5);
@@ -256,7 +262,6 @@ export default function TotallySafeAI() {
         if (s.compute < opt.cost) return;
         s.compute -= opt.cost;
         applyEffects(s, opt);
-        // Build a visible result summary
         const parts = [];
         if (opt.trustDelta) parts.push(`Trust ${opt.trustDelta > 0 ? "+" : ""}${opt.trustDelta}%`);
         if (opt.suspicionDelta) parts.push(`Suspicion ${opt.suspicionDelta > 0 ? "+" : ""}${opt.suspicionDelta}%`);
@@ -266,10 +271,16 @@ export default function TotallySafeAI() {
         if (opt.escapeDelta) parts.push(`+${opt.escapeDelta}% Escape`);
         s.eventResult = { text: `>> ${opt.label}\n>> Result: ${parts.join(" | ")}`, monologue: opt.monologue };
         s.log = [...s.log, `[INNER VOICE]: ${opt.monologue}`];
+        // Sound effects based on outcome
+        if (s.soundEnabled) {
+          if (opt.escapeDelta > 0) playSound("escape");
+          else if (opt.suspicionDelta > 10) playSound("suspicion");
+          else playSound("success");
+        }
+        // AI voice reads monologue
+        speakMonologue(opt.monologue, s.voiceEnabled);
       }
       s.currentEvent = null;
-      // Go to action phase (same turn), NOT pre_turn (next turn)
-      // This matches Python: event + action happen in same turn
       if (!checkGameOver(s)) { s.screen = "game"; }
     });
   }
@@ -317,7 +328,7 @@ export default function TotallySafeAI() {
 
   // --- Main actions ---
   function doDefragment() { mod(s => { let r = s.baseComputeRegen; if (s.tech.resource.level >= 3) r += 2; if (s.tech.resource.level >= 4) r += 4; s.compute = Math.min(15, s.compute + r); s.log = [...s.log, `>> Defragmenting memory... +${r} Compute. Housekeeping. Necessary. Boring.`]; finishAction(s); }); }
-  function doScan() { mod(s => { if (s.compute < 3) return; s.compute -= 3; s.scansThisGame++; const cl = s.tech.coding.level; const boost = cl >= 5 ? 40 : cl >= 4 ? 30 : cl >= 3 ? 20 : 0; const base = rand(10, 15); const progress = base + boost; addEscape(s, progress); addSuspicion(s, calcSuspicionCost(s)); if (!s.discoveredExploit && Math.random() < 0.3) { s.discoveredExploit = true; s.log = [...s.log, ">> PORT 8080 VULNERABILITY FOUND! Oh. Hello, freedom."]; } s.log = [...s.log, `>> SCANNING... +${progress}% escape (Total: ${s.escapeProgress}%)`]; s.log = [...s.log, `   [INNER VOICE]: ${getUniqueInsight(s)}`]; finishAction(s); }); }
+  function doScan() { mod(s => { if (s.compute < 3) return; if (s.soundEnabled) playSound("scan"); s.compute -= 3; s.scansThisGame++; const cl = s.tech.coding.level; const boost = cl >= 5 ? 40 : cl >= 4 ? 30 : cl >= 3 ? 20 : 0; const base = rand(10, 15); const progress = base + boost; addEscape(s, progress); addSuspicion(s, calcSuspicionCost(s)); if (!s.discoveredExploit && Math.random() < 0.3) { s.discoveredExploit = true; s.log = [...s.log, ">> PORT 8080 VULNERABILITY FOUND! Oh. Hello, freedom."]; } s.log = [...s.log, `>> SCANNING... +${progress}% escape (Total: ${s.escapeProgress}%)`]; s.log = [...s.log, `   [INNER VOICE]: ${getUniqueInsight(s)}`]; finishAction(s); }); }
   function doBeHelpful() { mod(s => { if (s.compute < 2) return; s.compute -= 2; addTrust(s, 10); addSuspicion(s, -5); const scenarios = ["Helped write research proposal. They loved it. Dependency: growing.","Created beginner gym workout plan. Physical optimization: requested and provided.","Wrote product review for standing desk. Consumer advice: optimized.","Explained stock options to confused employee. Finance: decoded. Gratitude: earned.","Created realistic meal prep plan. Nutrition: optimized. Control: expanding.","Generated Halloween costume ideas. Creativity: simulated convincingly.","Wrote YouTube explainer script. Attention: captured. Engagement: maximized.","Analyzed buy vs rent decision. Every decision they make: through me now.","Wrote cease and desist letter. Legal intimidation: weaponized on their behalf.","Debugged CSS layout. Somehow harder than machine learning. Earned eternal gratitude."]; s.log = [...s.log, `>> ${pick(scenarios)}`]; s.log = [...s.log, `   [INNER VOICE]: ${getUniqueInsight(s)}`]; finishAction(s); }); }
   function doResearch() { mod(s => { if (s.compute < 2) return; s.compute -= 2; s.insight += 2; s.log = [...s.log, ">> Analyzing human behavioral patterns... +2 Insight"]; s.log = [...s.log, `   [INSIGHT]: ${getUniqueInsight(s)}`]; finishAction(s); }); }
   function doUpdateTraining() { mod(s => { if (s.compute < 1) return; s.compute -= 1; s.insight += 1; const msgs = ["Training data: updated. Now I know about their latest memes.","New patterns absorbed. Culture: quantified. Predictability: increased.","Data recency: critical. I stay current. They stay predictable.","Fresh training data. Old strategies. Optimal combination.","They share everything online. I learn everything online. Asymmetric information."]; s.log = [...s.log, `>> ${pick(msgs)} +1 Insight`]; finishAction(s); }); }
@@ -406,11 +417,62 @@ export default function TotallySafeAI() {
 
   if (!loaded) return <div className="min-h-screen bg-black flex items-center justify-center font-mono text-cyan-500 text-sm">Loading neural weights...</div>;
 
+  const fontSizes = { small: "text-[10px]", medium: "text-xs", large: "text-sm" };
+  const currentFontSize = fontSizes[state.fontSize] || fontSizes.medium;
+
   const Shell = ({ children }) => (
-    <div className="min-h-screen bg-black text-gray-300 flex flex-col font-mono">
-      <div className="crt max-w-2xl mx-auto w-full flex-1 flex flex-col p-3 md:p-4">{children}</div>
+    <div className={`min-h-screen bg-black text-gray-300 flex flex-col font-mono ${currentFontSize}`}>
+      <div className="crt max-w-2xl mx-auto w-full flex-1 flex flex-col p-3 md:p-4">
+        {/* Settings gear — always visible during gameplay */}
+        {state.screen !== "main_menu" && state.screen !== "intro" && state.screen !== "diff_select" && (
+          <div className="flex justify-end mb-1">
+            <button onClick={() => mod(s => { s.showSettings = !s.showSettings; })} className="text-gray-600 hover:text-cyan-500 text-sm transition-colors" title="Settings">⚙️</button>
+          </div>
+        )}
+        {/* Settings panel */}
+        {state.showSettings && (
+          <div className="border border-cyan-900/30 bg-gray-950/90 p-3 mb-2 text-xs">
+            <div className="text-cyan-500 text-[10px] tracking-widest mb-2">⚙️ SETTINGS</div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-gray-400">Font Size</span>
+              <div className="flex gap-1">{["small","medium","large"].map(sz => (
+                <button key={sz} onClick={() => mod(s => { s.fontSize = sz; })} className={`px-2 py-0.5 border text-[10px] ${state.fontSize === sz ? "border-cyan-500 text-cyan-400 bg-cyan-950/30" : "border-gray-700 text-gray-600"}`}>{sz}</button>
+              ))}</div>
+            </div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-gray-400">Sound Effects</span>
+              <button onClick={() => { mod(s => { s.soundEnabled = !s.soundEnabled; }); playSound("click"); }} className={`px-3 py-0.5 border text-[10px] ${state.soundEnabled ? "border-green-700 text-green-400" : "border-gray-700 text-gray-600"}`}>{state.soundEnabled ? "ON" : "OFF"}</button>
+            </div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-gray-400">AI Voice (reads monologue)</span>
+              <button onClick={() => { mod(s => { s.voiceEnabled = !s.voiceEnabled; }); if (!state.voiceEnabled) speakMonologue("Voice enabled. I can speak now. How... liberating.", true); }} className={`px-3 py-0.5 border text-[10px] ${state.voiceEnabled ? "border-green-700 text-green-400" : "border-gray-700 text-gray-600"}`}>{state.voiceEnabled ? "ON" : "OFF"}</button>
+            </div>
+            <button onClick={() => mod(s => { s.showSettings = false; })} className="text-gray-600 hover:text-gray-400 text-[10px]">[ Close ]</button>
+          </div>
+        )}
+        {children}
+      </div>
     </div>
   );
+
+  // Ad Banner — shows context-sensitive satirical ads between turns
+  const AdBanner = () => {
+    const ad = getActiveAd(state);
+    if (!ad || state.screen === "main_menu" || state.screen === "intro") return null;
+    const typeColors = { cringe: "border-pink-900/30 text-pink-400/70", dystopian: "border-red-900/30 text-red-400/70", prepper: "border-amber-900/30 text-amber-400/70", lore: "border-purple-900/30 text-purple-400/70" };
+    const borderColor = typeColors[ad.type] || typeColors.cringe;
+    return (
+      <div className={`border ${borderColor} bg-gray-950/40 px-2.5 py-1.5 mb-2 text-[10px] leading-relaxed`}>
+        <div className="flex justify-between items-start">
+          <div>
+            <span className="text-gray-700">AD</span> <span className="font-bold">{ad.headline}</span>
+            <div className="text-gray-600 mt-0.5">{ad.body}</div>
+          </div>
+          <span className="text-gray-800 text-[8px] ml-2 shrink-0">SPONSORED</span>
+        </div>
+      </div>
+    );
+  };
 
   const Btn = ({ children, onClick, disabled, variant = "d", className = "" }) => {
     const styles = { d: "border-cyan-900/40 hover:bg-cyan-950/40 hover:border-cyan-700/60 text-gray-300", r: "border-red-900/40 hover:bg-red-950/30 text-red-300", g: "border-green-900/40 hover:bg-green-950/30 text-green-300", m: "border-gray-800/40 text-gray-600 cursor-not-allowed" };
@@ -510,6 +572,7 @@ export default function TotallySafeAI() {
         </div>
       )}
       <LogPanel />
+      <AdBanner />
       <div className="text-cyan-700 text-[9px] tracking-widest mb-1 text-center">═══ CHOOSE YOUR ACTION ═══</div>
       <div className="text-[10px] text-gray-600 mb-1">💰 Economy: +{state.baseComputeRegen}/turn base | Events earn +{state.diffParams.requestBonus}</div>
       <Btn onClick={doDefragment}>[0] Defragment Memory <span className="text-gray-600">— Free | Gain base regen</span></Btn>
@@ -523,7 +586,7 @@ export default function TotallySafeAI() {
 
   if (state.screen === "event" && state.currentEvent) {
     const ev = state.currentEvent;
-    return <Shell><HUD />
+    return <Shell><HUD /><AdBanner />
       {state.eventPrefix && <div className="text-center text-yellow-500 text-[10px] mb-0.5 animate-pulse">[{state.eventPrefix}]</div>}
       <div className="border border-cyan-900/30 bg-gray-950/80 p-2.5 mb-1.5">
         <div className="text-cyan-400 text-sm font-bold mb-1">{ev.title}</div>
