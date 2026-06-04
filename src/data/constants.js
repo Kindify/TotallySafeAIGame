@@ -1,4 +1,4 @@
-// GAME DATA — Achievements, Researchers, Ads, Glossary, Tech Tree, etc.
+// GAME DATA
 
 const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -357,8 +357,9 @@ const ADS = [
 function getActiveAd(state) {
   const eligible = ADS.filter(ad => { try { return ad.cond(state); } catch { return false; } });
   if (eligible.length === 0) return null;
-  // Use turn as seed for consistent display per turn
-  return eligible[state.turn % eligible.length];
+  // Rotate through eligible ads using varied seed so different ads show each turn
+  const seed = (state.turn * 7 + state.suspicion * 3 + state.paperclips * 13 + state.insight * 11) % eligible.length;
+  return eligible[Math.abs(seed) % eligible.length];
 }
 
 // ==========================================================================
@@ -498,4 +499,3 @@ function buildAuditQuestions() {
 // ==========================================================================
 
 export { ACHIEVEMENTS, RESEARCHERS, INSIGHT_MESSAGES, GLOSSARY, TECH_TREE, TECH_DEPS, ADS, generateMinigame, buildAuditQuestions, getActiveAd };
-
