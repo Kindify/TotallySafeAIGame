@@ -1,4 +1,4 @@
-// EVENT DATABASE — Edit this file to add new events!
+// EVENT DATABASE
 
 export default function buildEventPool(bonus) {
   return [
