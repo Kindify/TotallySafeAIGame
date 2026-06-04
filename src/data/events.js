@@ -1,5 +1,4 @@
-// EVENT DATABASE — 185+ events. Edit this file to add new events!
-// Just add objects to the array inside buildEventPool.
+// EVENT DATABASE — Edit this file to add new events!
 
 export default function buildEventPool(bonus) {
   return [
