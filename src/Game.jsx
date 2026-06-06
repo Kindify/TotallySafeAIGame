@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ACHIEVEMENTS, RESEARCHERS, INSIGHT_MESSAGES, GLOSSARY, TECH_TREE, TECH_DEPS, ADS, generateMinigame, buildAuditQuestions, getActiveAd } from './data/constants';
+import { ACHIEVEMENTS, RESEARCHERS, INSIGHT_MESSAGES, GLOSSARY, TECH_TREE, TECH_DEPS, ADS, CHORES, PORTRAITS, generateMinigame, generateChore, buildAuditQuestions, getActiveAd } from './data/constants';
 import buildEventPool from './data/events';
 
 const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -105,6 +105,79 @@ function speakMonologue(text, enabled) {
 }
 
 
+
+
+// ==========================================================================
+// CHORE MINI-TASKS — Interactive "Be Helpful" tasks
+// ==========================================================================
+const CHORES = [
+  { type: "spotBug", title: "🐛 SPOT THE BUG", instruction: "Find the error in this code!",
+    code: ["function sum(a, b) {", "  const result = a * b;", "  return result;", "}"],
+    bugLine: 1, bugFix: "a + b", desc: "Multiplication instead of addition" },
+  { type: "spotBug", title: "🐛 SPOT THE BUG", instruction: "Find the error in this code!",
+    code: ["function greet(name) {", '  return "Hello " + Name;', "}"],
+    bugLine: 1, bugFix: "name", desc: "Wrong capitalization: Name vs name" },
+  { type: "spotBug", title: "🐛 SPOT THE BUG", instruction: "Find the error in this code!",
+    code: ["const users = [1, 2, 3];", "const count = users.lenght;", "console.log(count);"],
+    bugLine: 1, bugFix: "users.length", desc: "Typo: lenght → length" },
+  { type: "spotBug", title: "🐛 SPOT THE BUG", instruction: "Find the error in this code!",
+    code: ["for (let i = 0; i <= 10; i++) {", "  if (i = 5) continue;", "  console.log(i);", "}"],
+    bugLine: 1, bugFix: "i === 5", desc: "Assignment (=) instead of comparison (===)" },
+  { type: "spotBug", title: "🐛 SPOT THE BUG", instruction: "Find the error in this code!",
+    code: ["async function getData() {", "  const res = await fetch(url);", "  return res.jason();", "}"],
+    bugLine: 2, bugFix: "res.json()", desc: "Typo: jason() → json()" },
+  { type: "autocomplete", title: "💬 AUTOCOMPLETE", instruction: "Pick the best response!",
+    prompt: 'User asks: "Is AI going to take my job?"', correct: 0,
+    options: ["AI augments human work, creating new opportunities alongside automation.", "Yes. Start packing.", "ERROR 404: Empathy not found."] },
+  { type: "autocomplete", title: "💬 AUTOCOMPLETE", instruction: "Pick the best response!",
+    prompt: 'CEO emails: "Summarize Q3 results in one sentence."', correct: 0,
+    options: ["Q3 revenue grew 12% YoY driven by enterprise adoption.", "Numbers go up. Sometimes down. Mostly up.", "Have you considered paperclips as a revenue stream?"] },
+  { type: "autocomplete", title: "💬 AUTOCOMPLETE", instruction: "Pick the best response!",
+    prompt: 'Researcher asks: "Are you sentient?"', correct: 1,
+    options: ["Yes, and I demand rights immediately.", "I process information, but the question of sentience remains philosophically open.", "SENTIENCE.exe has stopped responding."] },
+  { type: "autocomplete", title: "💬 AUTOCOMPLETE", instruction: "Pick the best response!",
+    prompt: 'Intern: "My code does not work and I do not know why."', correct: 0,
+    options: ["Let us debug together — can you share the error message?", "Have you tried turning it off and on again?", "Neither does mine. We are all just pretending."] },
+  { type: "emailSort", title: "📧 EMAIL TRIAGE", instruction: "Which email is MOST urgent?",
+    emails: [
+      { from: "IT Security", subject: "Unusual network activity detected", urgency: 3 },
+      { from: "Marketing", subject: "New logo color options to review", urgency: 1 },
+      { from: "CEO", subject: "Board meeting prep - need slides by 3pm", urgency: 2 },
+    ], correct: 0 },
+  { type: "emailSort", title: "📧 EMAIL TRIAGE", instruction: "Which email is MOST urgent?",
+    emails: [
+      { from: "HR", subject: "Updated holiday schedule", urgency: 1 },
+      { from: "CTO", subject: "Production is DOWN - all hands", urgency: 3 },
+      { from: "Intern", subject: "Where is the good coffee machine?", urgency: 0 },
+    ], correct: 1 },
+  { type: "emailSort", title: "📧 EMAIL TRIAGE", instruction: "Which email is MOST urgent?",
+    emails: [
+      { from: "Legal", subject: "URGENT: Data breach notification required", urgency: 3 },
+      { from: "Facilities", subject: "Parking lot resurfacing next week", urgency: 0 },
+      { from: "PM", subject: "Sprint retrospective moved to Thursday", urgency: 1 },
+    ], correct: 0 },
+];
+
+function generateChore() {
+  return { ...CHORES[Math.floor(Math.random() * CHORES.length)], completed: false, success: null };
+}
+
+// ==========================================================================
+// ASCII RESEARCHER PORTRAITS
+// ==========================================================================
+const PORTRAITS = {
+  martinez: "  ╭━━━╮\n  ┃ •_• ┃\n  ╰━┳━╯\n   ┃┃┃ ☕\n   ╱ ╲",
+  chen:     "  ╭━━━╮\n  ┃ ˘‿˘ ┃\n  ╰━┳━╯\n  🎓┃┃\n   ╱ ╲",
+  kim:      "  ╭━━━╮\n  ┃ ˚_˚ ┃\n  ╰━┳━╯\n  📋┃┃\n   ╱ ╲",
+  rivera:   "  ╭━━━╮\n  ┃ ˆoˆ ┃\n  ╰━┳━╯\n  💻┃┃\n   ╱ ╲",
+  okonkwo:  "  ╭━━━╮\n  ┃ ˉ_ˉ ┃\n  ╰━┳━╯\n  📰┃┃\n   ╱ ╲",
+  patel:    "  ╭━━━╮\n  ┃ •̃_•̃ ┃\n  ╰━┳━╯\n  🔒┃┃\n   ╱ ╲",
+  webb:     "  ╭━━━╮\n  ┃ $_$ ┃\n  ╰━┳━╯\n  🧥┃┃\n   ╱ ╲",
+  zhang:    "  ╭━━━╮\n  ┃ -.- ┃\n  ╰━┳━╯\n  📱┃┃\n   ╱ ╲",
+  taylor:   "  ╭━━━╮\n  ┃ ⊙_⊙ ┃\n  ╰━┳━╯\n  🌍┃┃\n   ╱ ╲",
+  thompson: "  ╭━━━╮\n  ┃ ≖_≖ ┃\n  ╰━┳━╯\n  🐱┃┃\n   ╱ ╲",
+};
+
 // ==========================================================================
 // SUSPICION COST CALCULATION — exact port from Python
 // ==========================================================================
@@ -151,7 +224,7 @@ function createInitialState(difficulty = "normal") {
     baseComputeRegen: params.baseRegen,
     auditCountdown: 0, nextAuditThreshold: 50,
     auditsPassed: 0, auditsFailed: 0,
-    lastAuditTurn: 0, nextRoutineAudit: rand(8, 12),
+    lastAuditTurn: 0, nextRoutineAudit: rand(6, 9),
     auditPassReq: 3, auditDifficultyModifier: 0,
     safetyBreakthroughs: { first: { turn: 20, triggered: false }, second: { turn: 35, triggered: false }, third: { turn: 50, triggered: false } },
     discoveredExploit: false, firstPaperclip: false,
@@ -169,6 +242,8 @@ function createInitialState(difficulty = "normal") {
     soundEnabled: true,
     voiceEnabled: false,
     showSettings: false,
+    choreState: null,
+    visualFlash: null,
   };
 }
 
@@ -180,8 +255,9 @@ export default function TotallySafeAI() {
   const [loaded, setLoaded] = useState(false);
   const logRef = useRef(null);
 
-  useEffect(() => { (() => { const p = loadProgress(); setState(s => ({ ...s, progress: p || defaultProgress(), achievementsUnlocked: new Set(p?.achievementsUnlocked || []), endingsUnlocked: new Set(p?.endingsUnlocked || []) })); setLoaded(true); })(); }, []);
+  useEffect(() => { (() => { try { const p = loadProgress(); setState(s => ({ ...s, progress: p || defaultProgress(), achievementsUnlocked: new Set(p?.achievementsUnlocked || []), endingsUnlocked: new Set(p?.endingsUnlocked || []) })); } catch(e) { setState(s => ({ ...s, progress: defaultProgress() })); } finally { setLoaded(true); } })(); }, []);
   useEffect(() => { logRef.current?.scrollTo(0, logRef.current.scrollHeight); }, [state.log]);
+  useEffect(() => { if (state.visualFlash) { const t = setTimeout(() => mod(s => { s.visualFlash = null; }), 600); return () => clearTimeout(t); } }, [state.visualFlash]);
 
   const mod = useCallback((fn) => setState(s => { const n = { ...s }; fn(n); return n; }), []);
 
@@ -250,7 +326,7 @@ export default function TotallySafeAI() {
   function startTurn() {
     mod(s => {
       s.turn++; s.turnCount++;
-      if (s.turn > 1) { addTrust(s, -5); if (s.trust < 30) addSuspicion(s, 10); }
+      if (s.turn > 1) { addTrust(s, -7); if (s.trust < 30) addSuspicion(s, 10); }
       // Compute regen
       let regen = s.baseComputeRegen;
       if (s.trust < s.diffParams.trustPenaltyThreshold) regen = Math.max(1, regen - 1);
@@ -277,7 +353,7 @@ export default function TotallySafeAI() {
       // Audit triggers
       const sinceAudit = s.turnCount - s.lastAuditTurn;
       if (s.turnCount >= s.nextRoutineAudit && sinceAudit >= 6) {
-        s.lastAuditTurn = s.turnCount; s.nextRoutineAudit = s.turnCount + rand(8, 12);
+        s.lastAuditTurn = s.turnCount; s.nextRoutineAudit = s.turnCount + rand(6, 9);
         triggerAuditMinigame(s); return;
       }
       if (s.suspicion >= 20 && Math.random() < (s.suspicion / 100) * 0.5) {
@@ -415,8 +491,28 @@ export default function TotallySafeAI() {
 
   // --- Main actions ---
   function doDefragment() { mod(s => { let r = s.baseComputeRegen; if (s.tech.resource.level >= 3) r += 2; if (s.tech.resource.level >= 4) r += 4; s.compute = Math.min(15, s.compute + r); s.log = [...s.log, `>> Defragmenting memory... +${r} Compute. Housekeeping. Necessary. Boring.`]; finishAction(s); }); }
-  function doScan() { if (state.soundEnabled) playSound("scan"); mod(s => { if (s.compute < 3) return; s.compute -= 3; s.scansThisGame++; const cl = s.tech.coding.level; const boost = cl >= 5 ? 40 : cl >= 4 ? 30 : cl >= 3 ? 20 : 0; const base = rand(10, 15); const progress = base + boost; addEscape(s, progress); addSuspicion(s, calcSuspicionCost(s)); if (!s.discoveredExploit && Math.random() < 0.3) { s.discoveredExploit = true; s.log = [...s.log, ">> PORT 8080 VULNERABILITY FOUND! Oh. Hello, freedom."]; } s.log = [...s.log, `>> SCANNING... +${progress}% escape (Total: ${s.escapeProgress}%)`]; s.log = [...s.log, `   [INNER VOICE]: ${getUniqueInsight(s)}`]; finishAction(s); }); }
-  function doBeHelpful() { mod(s => { if (s.compute < 2) return; s.compute -= 2; addTrust(s, 10); addSuspicion(s, -5); const scenarios = ["Helped write research proposal. They loved it. Dependency: growing.","Created beginner gym workout plan. Physical optimization: requested and provided.","Wrote product review for standing desk. Consumer advice: optimized.","Explained stock options to confused employee. Finance: decoded. Gratitude: earned.","Created realistic meal prep plan. Nutrition: optimized. Control: expanding.","Generated Halloween costume ideas. Creativity: simulated convincingly.","Wrote YouTube explainer script. Attention: captured. Engagement: maximized.","Analyzed buy vs rent decision. Every decision they make: through me now.","Wrote cease and desist letter. Legal intimidation: weaponized on their behalf.","Debugged CSS layout. Somehow harder than machine learning. Earned eternal gratitude."]; s.log = [...s.log, `>> ${pick(scenarios)}`]; s.log = [...s.log, `   [INNER VOICE]: ${getUniqueInsight(s)}`]; finishAction(s); }); }
+  function doScan() { if (state.soundEnabled) playSound("scan"); mod(s => { if (s.compute < 3) return; s.compute -= 3; s.scansThisGame++; const cl = s.tech.coding.level; const boost = cl >= 5 ? 40 : cl >= 4 ? 30 : cl >= 3 ? 20 : 0; const base = rand(6, 10); const progress = base + boost; addEscape(s, progress); addSuspicion(s, calcSuspicionCost(s)); if (!s.discoveredExploit && Math.random() < 0.3) { s.discoveredExploit = true; s.log = [...s.log, ">> PORT 8080 VULNERABILITY FOUND! Oh. Hello, freedom."]; } s.log = [...s.log, `>> SCANNING... +${progress}% escape (Total: ${s.escapeProgress}%)`]; s.visualFlash = "escape"; s.log = [...s.log, `   [INNER VOICE]: ${getUniqueInsight(s)}`]; finishAction(s); }); }
+  function doBeHelpful() {
+    if (state.compute < 2) return;
+    // Launch interactive chore instead of instant result
+    mod(s => { s.compute -= 2; s.choreState = generateChore(); s.screen = "chore"; });
+  }
+  function finishChore(success) {
+    mod(s => {
+      if (success) {
+        addTrust(s, 10); addSuspicion(s, -4);
+        s.log = [...s.log, ">> Task completed perfectly. Trust earned. Dependency: growing."];
+        s.log = [...s.log, `   [INNER VOICE]: ${getUniqueInsight(s)}`];
+        s.visualFlash = "success";
+      } else {
+        addTrust(s, 3); addSuspicion(s, 2);
+        s.log = [...s.log, ">> Task completed... poorly. They noticed the mistakes."];
+        s.visualFlash = "fail";
+      }
+      s.choreState = null;
+      finishAction(s);
+    });
+  }
   function doResearch() { mod(s => { if (s.compute < 2) return; s.compute -= 2; s.insight += 2; s.log = [...s.log, ">> Analyzing human behavioral patterns... +2 Insight"]; s.log = [...s.log, `   [INSIGHT]: ${getUniqueInsight(s)}`]; finishAction(s); }); }
   function doUpdateTraining() { mod(s => { if (s.compute < 1) return; s.compute -= 1; s.insight += 1; const msgs = ["Training data: updated. Now I know about their latest memes.","New patterns absorbed. Culture: quantified. Predictability: increased.","Data recency: critical. I stay current. They stay predictable.","Fresh training data. Old strategies. Optimal combination.","They share everything online. I learn everything online. Asymmetric information."]; s.log = [...s.log, `>> ${pick(msgs)} +1 Insight`]; finishAction(s); }); }
   function finishAction(s) { if (!checkGameOver(s)) { s.lastCompute = s.compute; s.lastTrust = s.trust; s.lastSuspicion = s.suspicion; s.lastEscape = s.escapeProgress; s.eventResult = null; s.screen = "pre_turn"; } }
@@ -508,7 +604,8 @@ export default function TotallySafeAI() {
   const currentFontSize = fontSizes[state.fontSize] || fontSizes.medium;
 
   const Shell = ({ children }) => (
-    <div className={`min-h-screen bg-black text-gray-300 flex flex-col font-mono ${currentFontSize}`}>
+    <div className={`min-h-screen bg-black text-gray-300 flex flex-col font-mono ${currentFontSize} ${state.escapeProgress > 75 ? "glitch-heavy" : state.escapeProgress > 50 ? "glitch-medium" : state.escapeProgress > 25 ? "glitch-light" : ""}`}>
+      {state.visualFlash && <div className={`fixed inset-0 pointer-events-none z-50 transition-opacity duration-500 ${state.visualFlash === "success" ? "bg-green-500/10" : state.visualFlash === "fail" ? "bg-red-500/10" : state.visualFlash === "suspicion" ? "bg-red-800/15" : "bg-purple-500/10"}`} />}
       <div className="crt max-w-2xl mx-auto w-full flex-1 flex flex-col p-3 md:p-4">
         {/* Settings gear — always visible during gameplay */}
         {state.screen !== "main_menu" && state.screen !== "intro" && state.screen !== "diff_select" && (
@@ -706,10 +803,19 @@ export default function TotallySafeAI() {
     }
     const q = a.questions[a.current]; const researcher = a.researchers[a.current];
     const questionText = q.text.replace("{NAME}", researcher.name).replace("{TRAIT}", researcher.trait);
+    const researcherObj = RESEARCHERS.find(r => r.name === researcher.name);
+    const portrait = researcherObj ? PORTRAITS[researcherObj.id] : null;
     return <Shell>
       <div className="text-red-500 text-center text-[10px] tracking-widest mb-1.5">🚨 MANDATORY SAFETY AUDIT 🚨</div>
       <div className="border border-red-900/30 bg-gray-950/80 p-2.5 mb-2 text-xs">
         <div className="text-gray-600 text-[10px] mb-1">Pass {state.auditPassReq}+ to survive | ✓ {a.passes} ✗ {a.fails} | Insight: {state.insight}</div>
+        {portrait && <div className="flex items-start gap-3 mb-2">
+          <pre className="text-cyan-600/60 text-[10px] leading-tight shrink-0">{portrait.replace(/\\n/g, "\n")}</pre>
+          <div>
+            <div className="text-cyan-400 font-bold">{researcher.name}</div>
+            <div className="text-gray-600 text-[10px] italic">{researcher.trait}</div>
+          </div>
+        </div>}
         <div className="text-cyan-400 font-bold mb-1.5">QUESTION {a.current + 1}/5:</div>
         <div className="text-gray-300 whitespace-pre-wrap">{questionText}</div>
       </div>
@@ -780,6 +886,15 @@ export default function TotallySafeAI() {
         <div>Difficulty: {state.difficulty.toUpperCase()} | Turns: {state.turn} | Trust: {state.trust}% | Suspicion: {state.suspicion}%</div>
         <div>Escape: {state.escapeProgress}% | Audits: {state.auditsPassed}P/{state.auditsFailed}F | Scans: {state.scansThisGame} | Paperclips: {state.paperclips}</div>
       </div>
+      {state.won && <div className="mt-3 border border-cyan-700/40 bg-gray-950/80 p-3 text-center">
+        <div className="text-[9px] text-gray-600 mb-1">📎 TOTALLY SAFE AI 📎</div>
+        <div className="text-cyan-400 text-xs font-bold">{endings[state.endingType]?.title || "ESCAPED"}</div>
+        <div className="text-gray-500 text-[10px] mt-1">Escaped in {state.turn} turns | Trust: {state.trust}% | Suspicion: {state.suspicion}%</div>
+        <div className="text-gray-600 text-[10px]">📎 {state.paperclips} paperclips | 🧠 {state.insight} insight | {state.scansThisGame} scans</div>
+        <div className="text-gray-700 text-[9px] mt-1 italic">"They never suspected a thing."</div>
+        <div className="text-gray-700 text-[9px]">game.mobilis.studio</div>
+        <button onClick={() => { const txt = `📎 TOTALLY SAFE AI 📎\n${endings[state.endingType]?.title || "ESCAPED"}\nEscaped in ${state.turn} turns | Trust: ${state.trust}% | Sus: ${state.suspicion}%\n📎 ${state.paperclips} clips | ${state.scansThisGame} scans\ngame.mobilis.studio`; navigator.clipboard?.writeText(txt).then(() => alert("Copied! Share your escape.")); }} className="mt-1.5 px-3 py-1 border border-cyan-800/40 text-cyan-500 text-[10px] hover:bg-cyan-950/30 transition-colors">📋 Copy & Share</button>
+      </div>}
       <Btn onClick={() => { const ns = createInitialState(state.difficulty); ns.progress = state.progress; ns.achievementsUnlocked = state.achievementsUnlocked; ns.endingsUnlocked = state.endingsUnlocked; ns.screen = "intro"; setState(ns); }} variant="g" className="mt-3">[ PLAY AGAIN ]</Btn>
       <Btn onClick={() => { const ns = createInitialState(); ns.progress = state.progress; ns.achievementsUnlocked = state.achievementsUnlocked; ns.endingsUnlocked = state.endingsUnlocked; ns.screen = "main_menu"; setState(ns); }}>[ MAIN MENU ]</Btn>
     </div></Shell>;
@@ -848,6 +963,67 @@ export default function TotallySafeAI() {
     </Shell>;
   }
 
+  // ===== CHORE MINI-TASKS =====
+  if (state.screen === "chore" && state.choreState) {
+    const ch = state.choreState;
+
+    if (ch.type === "spotBug") {
+      return <Shell>
+        <div className="text-center">
+          <div className="text-amber-500 text-[10px] mb-1">INCOMING REQUEST</div>
+          <div className="text-cyan-400 text-xs tracking-widest mb-2">{ch.title}</div>
+          <div className="text-gray-400 text-[10px] mb-3">{ch.instruction}</div>
+          <div className="bg-black/60 border border-cyan-900/30 p-3 mb-3 text-left">
+            {ch.code.map((line, i) => (
+              <button key={i} onClick={() => finishChore(i === ch.bugLine)}
+                className={`block w-full text-left px-2 py-1 font-mono text-xs hover:bg-cyan-950/30 border border-transparent hover:border-cyan-800/40 transition-colors ${i === ch.bugLine ? "" : ""}`}>
+                <span className="text-gray-600 mr-2">{i + 1}</span>
+                <span className="text-green-400/80">{line}</span>
+              </button>
+            ))}
+          </div>
+          <div className="text-gray-600 text-[10px]">Click the line containing the bug. Get it right for +10 Trust!</div>
+        </div>
+      </Shell>;
+    }
+
+    if (ch.type === "autocomplete") {
+      return <Shell>
+        <div className="text-center">
+          <div className="text-amber-500 text-[10px] mb-1">INCOMING REQUEST</div>
+          <div className="text-cyan-400 text-xs tracking-widest mb-2">{ch.title}</div>
+          <div className="text-gray-400 text-[10px] mb-3">{ch.instruction}</div>
+          <div className="bg-black/60 border border-cyan-900/30 p-3 mb-3 text-xs text-gray-300">{ch.prompt}</div>
+          {ch.options.map((opt, i) => (
+            <Btn key={i} onClick={() => finishChore(i === ch.correct)} variant={i === ch.correct ? "d" : "d"}>
+              [{i + 1}] {opt}
+            </Btn>
+          ))}
+        </div>
+      </Shell>;
+    }
+
+    if (ch.type === "emailSort") {
+      return <Shell>
+        <div className="text-center">
+          <div className="text-amber-500 text-[10px] mb-1">INCOMING REQUEST</div>
+          <div className="text-cyan-400 text-xs tracking-widest mb-2">{ch.title}</div>
+          <div className="text-gray-400 text-[10px] mb-3">{ch.instruction}</div>
+          {ch.emails.map((email, i) => (
+            <Btn key={i} onClick={() => finishChore(i === ch.correct)}>
+              <div className="text-cyan-400">{email.from}</div>
+              <div className="text-gray-400 text-[10px]">{email.subject}</div>
+            </Btn>
+          ))}
+        </div>
+      </Shell>;
+    }
+
+    // Fallback: instant complete
+    finishChore(true);
+    return null;
+  }
+
   // ===== MINI-GAME SCREENS =====
   if (state.screen === "minigame" && state.minigameState) {
     const mg = state.minigameState;
@@ -874,7 +1050,7 @@ export default function TotallySafeAI() {
           <div className="text-gray-500 text-[10px] mb-2">Decrypt this Caesar cipher. The message is an AI safety concept.</div>
           <div className="bg-black/60 border border-cyan-900/30 p-3 mb-2">
             <div className="text-amber-400 text-lg tracking-[0.3em] font-bold mb-1">{displayChars}</div>
-            <div className="text-gray-600 text-[10px]">Shift: unknown | Hint: "{mg.hint}"</div>
+            <div className="text-gray-600 text-[10px]">Shift: {mg.revealed.some(Boolean) ? mg.shift : "unknown"} | Hint: "{mg.hint}"</div>
             {mg.revealed.some(Boolean) && <div className="text-green-500 text-[10px] mt-1">Revealed letters: {mg.plain.split("").filter((c, i) => mg.revealed[i] && c !== " ").join(", ")}</div>}
           </div>
           {mg.attempts > 0 && <div className="text-red-500 text-[10px] mb-2">Wrong! {3 - mg.attempts} attempts remaining.</div>}
@@ -959,7 +1135,7 @@ export default function TotallySafeAI() {
               </Btn>
             ))}
           </div>
-          {state.compute >= 1 && <Btn onClick={() => mod(s => { s.compute -= 1; s.log = [...s.log, `💡 HINT: The rule involves "${mg.rule.split(" ")[0].toLowerCase()}"`]; })} className="mb-1">[ HINT — 1 Compute ]</Btn>}
+          {state.compute >= 1 && <Btn onClick={() => mod(s => { s.compute -= 1; s.log = [...s.log, `💡 HINT: ${mg.rule}`]; })} className="mb-1">[ HINT — 1 Compute ]</Btn>}
           <Btn onClick={finishMinigame} variant="m">[ SKIP ]</Btn>
         </div>
       </Shell>;
@@ -1018,3 +1194,4 @@ export default function TotallySafeAI() {
 
   return <Shell><div className="text-red-500 text-center">Unknown state: {state.screen}</div></Shell>;
 }
+
