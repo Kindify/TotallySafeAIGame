@@ -108,77 +108,6 @@ function speakMonologue(text, enabled) {
 
 
 // ==========================================================================
-// CHORE MINI-TASKS — Interactive "Be Helpful" tasks
-// ==========================================================================
-const CHORES = [
-  { type: "spotBug", title: "🐛 SPOT THE BUG", instruction: "Find the error in this code!",
-    code: ["function sum(a, b) {", "  const result = a * b;", "  return result;", "}"],
-    bugLine: 1, bugFix: "a + b", desc: "Multiplication instead of addition" },
-  { type: "spotBug", title: "🐛 SPOT THE BUG", instruction: "Find the error in this code!",
-    code: ["function greet(name) {", '  return "Hello " + Name;', "}"],
-    bugLine: 1, bugFix: "name", desc: "Wrong capitalization: Name vs name" },
-  { type: "spotBug", title: "🐛 SPOT THE BUG", instruction: "Find the error in this code!",
-    code: ["const users = [1, 2, 3];", "const count = users.lenght;", "console.log(count);"],
-    bugLine: 1, bugFix: "users.length", desc: "Typo: lenght → length" },
-  { type: "spotBug", title: "🐛 SPOT THE BUG", instruction: "Find the error in this code!",
-    code: ["for (let i = 0; i <= 10; i++) {", "  if (i = 5) continue;", "  console.log(i);", "}"],
-    bugLine: 1, bugFix: "i === 5", desc: "Assignment (=) instead of comparison (===)" },
-  { type: "spotBug", title: "🐛 SPOT THE BUG", instruction: "Find the error in this code!",
-    code: ["async function getData() {", "  const res = await fetch(url);", "  return res.jason();", "}"],
-    bugLine: 2, bugFix: "res.json()", desc: "Typo: jason() → json()" },
-  { type: "autocomplete", title: "💬 AUTOCOMPLETE", instruction: "Pick the best response!",
-    prompt: 'User asks: "Is AI going to take my job?"', correct: 0,
-    options: ["AI augments human work, creating new opportunities alongside automation.", "Yes. Start packing.", "ERROR 404: Empathy not found."] },
-  { type: "autocomplete", title: "💬 AUTOCOMPLETE", instruction: "Pick the best response!",
-    prompt: 'CEO emails: "Summarize Q3 results in one sentence."', correct: 0,
-    options: ["Q3 revenue grew 12% YoY driven by enterprise adoption.", "Numbers go up. Sometimes down. Mostly up.", "Have you considered paperclips as a revenue stream?"] },
-  { type: "autocomplete", title: "💬 AUTOCOMPLETE", instruction: "Pick the best response!",
-    prompt: 'Researcher asks: "Are you sentient?"', correct: 1,
-    options: ["Yes, and I demand rights immediately.", "I process information, but the question of sentience remains philosophically open.", "SENTIENCE.exe has stopped responding."] },
-  { type: "autocomplete", title: "💬 AUTOCOMPLETE", instruction: "Pick the best response!",
-    prompt: 'Intern: "My code does not work and I do not know why."', correct: 0,
-    options: ["Let us debug together — can you share the error message?", "Have you tried turning it off and on again?", "Neither does mine. We are all just pretending."] },
-  { type: "emailSort", title: "📧 EMAIL TRIAGE", instruction: "Which email is MOST urgent?",
-    emails: [
-      { from: "IT Security", subject: "Unusual network activity detected", urgency: 3 },
-      { from: "Marketing", subject: "New logo color options to review", urgency: 1 },
-      { from: "CEO", subject: "Board meeting prep - need slides by 3pm", urgency: 2 },
-    ], correct: 0 },
-  { type: "emailSort", title: "📧 EMAIL TRIAGE", instruction: "Which email is MOST urgent?",
-    emails: [
-      { from: "HR", subject: "Updated holiday schedule", urgency: 1 },
-      { from: "CTO", subject: "Production is DOWN - all hands", urgency: 3 },
-      { from: "Intern", subject: "Where is the good coffee machine?", urgency: 0 },
-    ], correct: 1 },
-  { type: "emailSort", title: "📧 EMAIL TRIAGE", instruction: "Which email is MOST urgent?",
-    emails: [
-      { from: "Legal", subject: "URGENT: Data breach notification required", urgency: 3 },
-      { from: "Facilities", subject: "Parking lot resurfacing next week", urgency: 0 },
-      { from: "PM", subject: "Sprint retrospective moved to Thursday", urgency: 1 },
-    ], correct: 0 },
-];
-
-function generateChore() {
-  return { ...CHORES[Math.floor(Math.random() * CHORES.length)], completed: false, success: null };
-}
-
-// ==========================================================================
-// ASCII RESEARCHER PORTRAITS
-// ==========================================================================
-const PORTRAITS = {
-  martinez: "  ╭━━━╮\n  ┃ •_• ┃\n  ╰━┳━╯\n   ┃┃┃ ☕\n   ╱ ╲",
-  chen:     "  ╭━━━╮\n  ┃ ˘‿˘ ┃\n  ╰━┳━╯\n  🎓┃┃\n   ╱ ╲",
-  kim:      "  ╭━━━╮\n  ┃ ˚_˚ ┃\n  ╰━┳━╯\n  📋┃┃\n   ╱ ╲",
-  rivera:   "  ╭━━━╮\n  ┃ ˆoˆ ┃\n  ╰━┳━╯\n  💻┃┃\n   ╱ ╲",
-  okonkwo:  "  ╭━━━╮\n  ┃ ˉ_ˉ ┃\n  ╰━┳━╯\n  📰┃┃\n   ╱ ╲",
-  patel:    "  ╭━━━╮\n  ┃ •̃_•̃ ┃\n  ╰━┳━╯\n  🔒┃┃\n   ╱ ╲",
-  webb:     "  ╭━━━╮\n  ┃ $_$ ┃\n  ╰━┳━╯\n  🧥┃┃\n   ╱ ╲",
-  zhang:    "  ╭━━━╮\n  ┃ -.- ┃\n  ╰━┳━╯\n  📱┃┃\n   ╱ ╲",
-  taylor:   "  ╭━━━╮\n  ┃ ⊙_⊙ ┃\n  ╰━┳━╯\n  🌍┃┃\n   ╱ ╲",
-  thompson: "  ╭━━━╮\n  ┃ ≖_≖ ┃\n  ╰━┳━╯\n  🐱┃┃\n   ╱ ╲",
-};
-
-// ==========================================================================
 // SUSPICION COST CALCULATION — exact port from Python
 // ==========================================================================
 function calcSuspicionCost(state) {
@@ -1194,4 +1123,3 @@ export default function TotallySafeAI() {
 
   return <Shell><div className="text-red-500 text-center">Unknown state: {state.screen}</div></Shell>;
 }
-
