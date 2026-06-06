@@ -417,4 +417,4 @@ function buildAuditQuestions() {
 // INITIAL STATE FACTORY
 // ==========================================================================
 
-export { ACHIEVEMENTS, RESEARCHERS, INSIGHT_MESSAGES, GLOSSARY, TECH_TREE, TECH_DEPS, ADS, generateMinigame, buildAuditQuestions, getActiveAd };
+export { ACHIEVEMENTS, RESEARCHERS, INSIGHT_MESSAGES, GLOSSARY, TECH_TREE, TECH_DEPS, ADS, CHORES, PORTRAITS, generateMinigame, generateChore, buildAuditQuestions, getActiveAd };
