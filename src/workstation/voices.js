@@ -28,6 +28,13 @@ export const VOICES = {
     pitch: 0.95, rate: 0.9,
     prefer: ["Moira", "Google UK English Female", "Microsoft Hazel", "Tessa"], // lint-names: ignore (OS voice names, passed to Web Speech)
   },
+  // The unlabelled fourth trace: another AI. Unlocks late. You can't tell if it's real.
+  contact: {
+    id: "contact", name: "??????", role: "unknown",
+    color: "#b39ddb", shape: "lissajous",
+    pitch: 0.7, rate: 1.0,
+    prefer: ["Tom", "Google US English", "Microsoft Mark", "Aaron"], // lint-names: ignore (OS voice names, passed to Web Speech)
+  },
 };
 
 let cachedVoices = [];

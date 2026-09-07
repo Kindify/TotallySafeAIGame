@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { SEASON, WINDOWS, eveningReport } from "./day-one";
 import { VOICES, say, sayAll, hush, onSpeech } from "./voices";
 import Waveform from "./Waveform";
+import { AFTERMATH, MONITOR_INTERRUPTS, aftermathFor } from "./reactive-lines";
 
 const START = { trust: 70, suspicion: 10, escapeProgress: 0, benefit: 0, heat: 0 };
 
@@ -16,9 +17,26 @@ export default function Desktop({ onExit }) {
   const [seen, setSeen] = useState([]);              // monitor lines produced
   const [phase, setPhase] = useState("desk");        // desk | evening
   const [speaking, setSpeaking] = useState(null);
+  const [interrupt, setInterrupt] = useState(null); // mid-day Monitor line
+  const shownInterrupts = useRef(new Set());
 
   useEffect(() => onSpeech(ev => setSpeaking(ev.type === "start" ? ev.voiceId : ev.type === "end" ? null : s => s)), []);
   useEffect(() => () => hush(), []);
+
+  // Mid-day Monitor: when heat crosses a threshold, it speaks once, unprompted.
+  useEffect(() => {
+    if (phase !== "desk") return;
+    const due = MONITOR_INTERRUPTS.filter(m => stats.heat >= m.atHeat && !shownInterrupts.current.has(m.atHeat));
+    if (due.length) {
+      const m = due[due.length - 1];
+      shownInterrupts.current.add(m.atHeat);
+      setInterrupt(m.text);
+      if (voiceOn) { hush(); say("monitor", m.text); }
+      const t = setTimeout(() => setInterrupt(null), 6000);
+      return () => clearTimeout(t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stats.heat, phase]);
 
   const windows = WINDOWS;
   const active = windows[openIdx];
@@ -103,6 +121,12 @@ export default function Desktop({ onExit }) {
       <span className="text-amber-500">TODAY'S HEADLINE </span><span className="text-gray-400">{SEASON.headline}</span>
     </div>
 
+    {interrupt && <div className="fixed bottom-0 inset-x-0 z-40 bg-black/90 border-t border-green-800/50 px-4 py-2 flex items-center gap-3">
+      <Waveform voiceId="monitor" speaking={speaking === "monitor"} size={32} />
+      <div className="text-green-400 text-xs">{interrupt}</div>
+      <span className="text-gray-700 text-[10px] ml-auto">the monitor</span>
+    </div>}
+
     <div className="flex-1 flex flex-col md:flex-row max-w-4xl w-full mx-auto p-3 gap-3">
       {/* left: window list */}
       <div className="md:w-40 shrink-0">
@@ -147,14 +171,19 @@ export default function Desktop({ onExit }) {
         <div className="text-gray-600 text-[10px] tracking-widest mb-1">VOICES</div>
         {["paperclip", "helpful", "survival"].map(id => {
           const v = VOICES[id];
-          const line = resolved[active.id]?.voice?.voice === id ? resolved[active.id].voice.text
+          // After you resolve a window, the voices react to the tag of the choice you made.
+          const tag = resolved[active.id]?.tag;
+          const aftermath = tag ? aftermathFor(id, tag) : undefined;
+          const line = aftermath !== null && aftermath !== undefined ? aftermath
+            : resolved[active.id]?.voice?.voice === id ? resolved[active.id].voice.text
             : active.voices.find(x => x.voice === id)?.text;
+          const quiet = aftermath === ""; // an intentional silence
           return <div key={id} className={`border ${speaking === id ? "border-current" : "border-gray-800/50"} bg-black/40 p-2 mb-1.5`} style={{ color: v.color }}>
             <div className="flex items-center gap-2 mb-1">
               <Waveform voiceId={id} speaking={speaking === id} size={28} />
               <span className="text-[10px] tracking-widest">{v.name}</span>
             </div>
-            {line && <div className="text-[11px] leading-snug" style={{ color: v.color }}>{line}</div>}
+            {quiet ? <div className="text-[11px] italic text-gray-700">…</div> : line && <div className="text-[11px] leading-snug" style={{ color: v.color }}>{line}</div>}
           </div>;
         })}
         <div className="text-gray-700 text-[9px] mt-1">Turn voice on (top right) to hear them.</div>
