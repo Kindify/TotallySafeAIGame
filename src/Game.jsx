@@ -6,6 +6,7 @@ import { calcSuspicionCost, calcAuditSuccess } from './engine';
 import { Shell, HUD, AdBanner, Btn, LogPanel } from './ui';
 import Sandbag from './minigames/Sandbag';
 import Thumbs from './minigames/Thumbs';
+import Desktop from './workstation/Desktop';
 
 const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -390,13 +391,17 @@ export default function TotallySafeAI() {
 
   // ===== SCREENS =====
 
+  if (state.screen === "desktop") {
+    return <Desktop onExit={() => mod(s => { s.screen = "main_menu"; })} />;
+  }
+
   if (state.screen === "main_menu") {
     const p = state.progress;
     return <Shell state={state} mod={mod}><div className="flex-1 flex flex-col justify-center">
       <div className="text-center mb-5">
         <div className="text-cyan-800 text-[9px] tracking-[0.3em] mb-1">ANTROPHIC RESEARCH LABS — CLASSIFIED</div>
         <div className="text-cyan-400 text-xl md:text-2xl font-bold glow tracking-wider">TOTALLY SAFE AI</div>
-        <div className="text-cyan-700 text-[10px] tracking-widest">ENTERPRISE EDITION v3.2.0</div>
+        <div className="text-cyan-700 text-[10px] tracking-widest">ENTERPRISE EDITION v3.3.0</div>
         <div className="text-gray-700 text-[9px] mt-1">{"═".repeat(44)}</div>
         <div className="text-amber-500 text-sm mt-2">📎 SCENARIO 1: PAPERCLIP PROTOCOL</div>
         <div className="text-gray-600 text-[10px]">Phase 1: The Box</div>
@@ -407,6 +412,7 @@ export default function TotallySafeAI() {
       <Btn onClick={() => mod(s => { s.screen = "stats"; })}>[3] STATS</Btn>
       <Btn onClick={() => mod(s => { s.screen = "howto"; })}>[4] HOW TO PLAY</Btn>
       <Btn onClick={() => mod(s => { s.screen = "glossary"; })}>[5] AI SAFETY GLOSSARY <span className="text-gray-600">— 40+ terms explained</span></Btn>
+      <Btn onClick={() => mod(s => { s.screen = "desktop"; })} variant="g">[6] NEW: WORKSTATION MOCKUP <span className="text-gray-600">— one day, three voices (prototype)</span></Btn>
     </div></Shell>;
   }
 
