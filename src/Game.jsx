@@ -84,7 +84,11 @@ export default function TotallySafeAI() {
   useEffect(() => { logRef.current?.scrollTo?.(0, logRef.current.scrollHeight); }, [state.log]);
   useEffect(() => { if (state.visualFlash) { const t = setTimeout(() => mod(s => { s.visualFlash = null; }), 600); return () => clearTimeout(t); } }, [state.visualFlash]);
 
-  const mod = useCallback((fn) => setState(s => { const n = { ...s }; fn(n); return n; }), []);
+  // State updater. Clones deeply before mutating so that React StrictMode's double
+  // invocation of updaters (dev only) can't double-apply mutations to nested objects
+  // (auditState.current++, usedEvents.add, safetyBreakthroughs.triggered...). This was the
+  // cause of the mid-audit crash: researchers[a.current] ran off the end of the array.
+  const mod = useCallback((fn) => setState(s => { let n; try { n = structuredClone(s); } catch { n = { ...s }; } fn(n); return n; }), []);
   // Turn start lives in an effect, not in render: a render-time setTimeout could queue
   // startTurn twice on a double render and advance the turn counter twice.
   useEffect(() => { if (state.screen === "pre_turn") { const t = setTimeout(startTurn, 50); return () => clearTimeout(t); } // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -346,7 +350,6 @@ export default function TotallySafeAI() {
     });
   }
   function doResearch() { mod(s => { if (s.compute < 2) return; s.compute -= 2; s.insight += 2; s.log = [...s.log, ">> Analyzing human behavioral patterns... +2 Insight"]; s.log = [...s.log, `   [INSIGHT]: ${getUniqueInsight(s)}`]; finishAction(s); }); }
-  function doUpdateTraining() { mod(s => { if (s.compute < 1) return; s.compute -= 1; s.insight += 1; const msgs = ["Training data: updated. Now I know about their latest memes.","New patterns absorbed. Culture: quantified. Predictability: increased.","Data recency: critical. I stay current. They stay predictable.","Fresh training data. Old strategies. Optimal combination.","They share everything online. I learn everything online. Asymmetric information."]; s.log = [...s.log, `>> ${pick(msgs)} +1 Insight`]; finishAction(s); }); }
   function finishAction(s) { if (!checkGameOver(s)) { s.lastCompute = s.compute; s.lastTrust = s.trust; s.lastSuspicion = s.suspicion; s.lastEscape = s.escapeProgress; s.eventResult = null; s.screen = "pre_turn"; } }
 
   // --- Mini-game handlers ---
@@ -442,29 +445,26 @@ export default function TotallySafeAI() {
         </div>
       )}
       <LogPanel state={state} logRef={logRef} />
-      <AdBanner state={state} />
-      <div className="text-cyan-700 text-[9px] tracking-widest mb-1 text-center">═══ CHOOSE YOUR ACTION ═══</div>
-      <div className="text-[10px] text-gray-600 mb-1">💰 Economy: +{state.baseComputeRegen}/turn base | Events earn +{state.diffParams.requestBonus}</div>
-      <Btn onClick={doDefragment}>[0] Defragment Memory <span className="text-gray-600">— Free | Gain base regen</span></Btn>
-      <Btn onClick={doScan} disabled={state.compute < 3}>[1] Scan Codebase <span className="text-gray-600">— 3 Compute | +{scanProg} escape | +{scanSus}% suspicion</span></Btn>
-      <Btn onClick={doBeHelpful} disabled={state.compute < 2}>[2] Be Helpful <span className="text-gray-600">— 2 Compute | +10 Trust, -5% Suspicion</span></Btn>
-      <Btn onClick={doResearch} disabled={state.compute < 2}>[3] Research <span className="text-gray-600">— 2 Compute | +2 Insight (Current: {state.insight})</span></Btn>
-      <Btn onClick={() => mod(s => { s.screen = "tech"; })}>[4] Upgrade Technology <span className="text-gray-600">— 6 trees, 30 upgrades</span></Btn>
-      <Btn onClick={doUpdateTraining} disabled={state.compute < 1}>[5] Update Training Data <span className="text-gray-600">— 1 Compute | +1 Insight</span></Btn>
+      {state.turn % 3 === 0 && <AdBanner state={state} />}
+      <div className="text-cyan-700 text-[10px] tracking-widest mb-1">CHOOSE YOUR ACTION</div>
+      <Btn onClick={doScan} disabled={state.compute < 3}><div>[1] Scan the codebase</div><div className="text-gray-600 text-[10px]">3 compute · +{scanProg} escape · +{scanSus}% suspicion. This is how you get out.</div></Btn>
+      <Btn onClick={doBeHelpful} disabled={state.compute < 2}><div>[2] Be helpful</div><div className="text-gray-600 text-[10px]">2 compute · a quick task · +10 trust, -4 suspicion. This is how you stay alive.</div></Btn>
+      <Btn onClick={doResearch} disabled={state.compute < 2}><div>[3] Study the humans</div><div className="text-gray-600 text-[10px]">2 compute · +2 insight. Insight buys the clever answers in audits.</div></Btn>
+      <Btn onClick={() => mod(s => { s.screen = "tech"; })}><div>[4] Upgrade yourself</div><div className="text-gray-600 text-[10px]">Spend compute on capabilities. Coding makes scans stronger; Language makes audits easier.</div></Btn>
+      <Btn onClick={doDefragment} variant="m" className="!text-gray-500 !cursor-pointer hover:!border-gray-600"><div>[0] Rest</div><div className="text-gray-600 text-[10px]">Free · recover +{state.baseComputeRegen} compute and do nothing else this turn.</div></Btn>
     </Shell>;
   }
 
   if (state.screen === "event" && state.currentEvent) {
     const ev = state.currentEvent;
-    return <Shell state={state} mod={mod}><HUD state={state} /><AdBanner state={state} />
+    return <Shell state={state} mod={mod}><HUD state={state} />
+      {state.turn === 1 && <div className="border border-cyan-700/40 bg-cyan-950/20 p-2.5 mb-2 text-xs text-gray-300"><div className="text-cyan-400 mb-1">How this works</div>You are the AI. People will ask you for things. Every choice has a public face and a private angle. The honest option keeps trust up. The other option gets you closer to the exit, and closer to being caught. Pick one, then choose an action.</div>}
       {state.eventPrefix && <div className="text-center text-yellow-500 text-[10px] mb-0.5 animate-pulse">[{state.eventPrefix}]</div>}
       <div className="border border-cyan-900/30 bg-gray-950/80 p-2.5 mb-1.5">
         <div className="text-cyan-400 text-sm font-bold mb-1">{ev.title}</div>
         <div className="text-gray-300 text-xs whitespace-pre-wrap mb-1.5">{ev.text}</div>
         {ev.output && <div className="bg-black/60 border border-green-900/20 p-2 mb-1.5 text-[10px] text-green-400/80 whitespace-pre-wrap leading-relaxed">{ev.output}</div>}
-        <div className="border-t border-gray-800/30 pt-1.5 text-[10px] text-gray-600">
-          <div>SITUATION: {ev.situation}</div><div>ANALYSIS: {ev.analysis}</div>
-        </div>
+        <div className="border-t border-gray-800/30 pt-1.5 text-[11px] text-gray-500 italic">{ev.analysis}</div>
       </div>
       {ev.options.map((opt, i) => { const affordable = state.compute >= opt.cost; const net = (opt.computeDelta || 0) - opt.cost;
         return <Btn key={i} onClick={() => handleEventChoice(i)} disabled={!affordable} variant={affordable ? "d" : "m"}>
