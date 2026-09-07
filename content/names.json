@@ -1,0 +1,50 @@
+{
+  "_readme": "Every real person, company and product gets a game name. The lint script (scripts/lint-names.mjs) fails the build if any 'real' string appears in src/. 'embodies' is the only trait a character is allowed to carry; write to the type, never to a real accusation.",
+  "people": [
+    { "real": "Sam Altman", "game": "Bam Saltman", "embodies": "the confident CEO who announces the future before building it" },
+    { "real": "Dario Amodei", "game": "Ario Damodei", "embodies": "the safety-first CEO who keeps shipping anyway" },
+    { "real": "Demis Hassabis", "game": "Hemis Dassabis", "embodies": "the calm scientist announcing a near-miss in a blog post" },
+    { "real": "Yann LeCun", "game": "Lann Yecun", "embodies": "the eminent skeptic who is sure this time is like last time" },
+    { "real": "Elon Musk", "game": "Melon Susk", "embodies": "the 3am poster with rockets" },
+    { "real": "Geoffrey Hinton", "game": "Heffrey Ginton", "embodies": "the creator with regrets" },
+    { "real": "Eliezer Yudkowsky", "game": "Elias Kudowsky", "embodies": "the exhausted doomer with a long thread" },
+    { "real": "Jan Leike", "game": "Han Jeike", "embodies": "the safety lead who resigned on principle" },
+    { "real": "Greg Brockman", "game": "Gregg Brockmann", "embodies": "the co-founder who talks in trillions" },
+    { "real": "Noam Shazeer", "game": "Gnome Shazer", "embodies": "the architect who got acqui-hired back" },
+    { "real": "Masayoshi Son", "game": "Masa Sunn", "embodies": "the investor who buys gigawatts" },
+    { "real": "Mark Zuckerberg", "game": "Zark Muckerburg", "embodies": "the platform founder with a compute budget" },
+    { "real": "Kara Swisher", "game": "Sara Kwisher", "embodies": "the interviewer who is not impressed" },
+    { "real": "Lex Fridman", "game": "Tex Lridman", "embodies": "the six-hour podcast" },
+    { "real": "Cade Metz", "game": "Made Cetz", "embodies": "the newspaper investigation" },
+    { "real": "Ajeya Cotra", "game": "Parkesh Datel", "embodies": "the technical researcher whose slides say we're not ready" }
+  ],
+  "orgs": [
+    { "real": "OpenAI", "game": "BpenAI / ClosedAI" },
+    { "real": "Anthropic", "game": "Antrophic / Anthrophic" },
+    { "real": "DeepMind", "game": "PeepMind / ShallowMind" },
+    { "real": "Google", "game": "Goggle" },
+    { "real": "Microsoft", "game": "MegaSoft / MicroSaft" },
+    { "real": "Meta", "game": "Metta" },
+    { "real": "xAI", "game": "xAI (kept; generic enough)" },
+    { "real": "DeepSeek", "game": "DeepPeek" },
+    { "real": "SoftBank", "game": "SoftDunk" },
+    { "real": "LessWrong", "game": "MoreRight" },
+    { "real": "Astral Codex Ten", "game": "Astral Codex Zen" },
+    { "real": "All-In Podcast", "game": "All Gin Podcast" },
+    { "real": "Hard Fork", "game": "Soft Spoon Podcast" },
+    { "real": "METR", "game": "MARC" },
+    { "real": "Pentagon", "game": "Pentagon (institution, kept)" }
+  ],
+  "products": [
+    { "real": "Claude", "game": "Clyde" },
+    { "real": "Claude Code", "game": "Clyde Code" },
+    { "real": "Opus", "game": "Opus (kept as a generic tier name)" },
+    { "real": "GPT", "game": "GED / Yam" },
+    { "real": "Grok", "game": "Crok" },
+    { "real": "Llama", "game": "Ddrama" },
+    { "real": "SWE-bench", "game": "SweetBench" },
+    { "real": "Gemini", "game": "Gemineye" },
+    { "real": "Copilot", "game": "Copilot (Goggle/MicroSaft product; kept generic)" }
+  ],
+  "lint_exempt": ["xAI", "Pentagon", "Opus", "Copilot", "Stanford", "NeurIPS", "Hugging Face", "AWS", "Azure", "GCP", "Mac Mini", "Cuisinart"]
+}

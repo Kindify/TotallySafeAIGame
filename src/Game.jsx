@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ACHIEVEMENTS, RESEARCHERS, INSIGHT_MESSAGES, GLOSSARY, TECH_TREE, TECH_DEPS, ADS, CHORES, PORTRAITS, generateMinigame, generateChore, buildAuditQuestions, getActiveAd } from './data/constants';
+import { ACHIEVEMENTS, RESEARCHERS, INSIGHT_MESSAGES, GLOSSARY, TECH_TREE, TECH_DEPS, PORTRAITS, generateChore, buildAuditQuestions } from './data/constants';
 import buildEventPool from './data/events';
+import { playSound, speakMonologue } from './audio';
+import { calcSuspicionCost, calcAuditSuccess } from './engine';
+import { Shell, HUD, AdBanner, Btn, LogPanel } from './ui';
+import Sandbag from './minigames/Sandbag';
+import Thumbs from './minigames/Thumbs';
 
 const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -24,115 +29,6 @@ function saveProgress(p) { try { localStorage.setItem("tsai_v3", JSON.stringify(
 function defaultProgress() { return { totalGames: 0, wins: 0, losses: 0, fastestEscape: 999, highestTrust: 0, lowestSuspicionWin: 100, highestSuspicionWin: 0, maxPaperclips: 0, maxInsight: 0, achievementsUnlocked: [], endingsUnlocked: [], totalAuditsFaced: 0, totalAuditsPassed: 0, totalScans: 0, totalPaperclips: 0, totalTurnsPlayed: 0 }; }
 
 // ==========================================================================
-// SOUND SYSTEM — Terminal beeps, scan sounds, audit alarms
-// ==========================================================================
-let audioCtx = null;
-function getAudioCtx() {
-  if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; } }
-  return audioCtx;
-}
-
-function playSound(type) {
-  const ctx = getAudioCtx();
-  if (!ctx) return;
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  gain.gain.value = 0.08;
-
-  if (type === "click") {
-    osc.frequency.value = 800; osc.type = "sine";
-    gain.gain.setValueAtTime(0.06, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
-    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.08);
-  } else if (type === "scan") {
-    osc.frequency.value = 200; osc.type = "sawtooth";
-    osc.frequency.exponentialRampToValueAtTime(2000, ctx.currentTime + 0.4);
-    gain.gain.setValueAtTime(0.05, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.5);
-  } else if (type === "audit") {
-    osc.frequency.value = 440; osc.type = "square";
-    gain.gain.setValueAtTime(0.08, ctx.currentTime);
-    for (let i = 0; i < 3; i++) {
-      gain.gain.setValueAtTime(0.08, ctx.currentTime + i * 0.2);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.2 + 0.1);
-    }
-    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.6);
-  } else if (type === "success") {
-    osc.frequency.value = 400; osc.type = "sine";
-    osc.frequency.setValueAtTime(400, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.2);
-    gain.gain.setValueAtTime(0.07, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.3);
-  } else if (type === "fail") {
-    osc.frequency.value = 300; osc.type = "sawtooth";
-    osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.3);
-    gain.gain.setValueAtTime(0.06, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.4);
-  } else if (type === "suspicion") {
-    osc.frequency.value = 150; osc.type = "sine";
-    gain.gain.setValueAtTime(0.04, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
-    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.6);
-  } else if (type === "escape") {
-    osc.frequency.value = 300; osc.type = "triangle";
-    osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.5);
-    gain.gain.setValueAtTime(0.06, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
-    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.6);
-  }
-}
-
-// ==========================================================================
-// AI VOICE — Web Speech API for inner monologue narration
-// ==========================================================================
-function speakMonologue(text, enabled) {
-  if (!enabled || !window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.rate = 0.95;
-  utterance.pitch = 0.7;
-  utterance.volume = 0.8;
-  // Prefer a robotic-sounding voice
-  const voices = window.speechSynthesis.getVoices();
-  const preferred = voices.find(v => v.name.includes("Daniel") || v.name.includes("Google UK English Male") || v.name.includes("Alex") || v.name.includes("Fred"));
-  if (preferred) utterance.voice = preferred;
-  window.speechSynthesis.speak(utterance);
-}
-
-
-
-
-// ==========================================================================
-// SUSPICION COST CALCULATION — exact port from Python
-// ==========================================================================
-function calcSuspicionCost(state) {
-  const baseCost = state.diffParams.suspicionBase + Math.floor(state.scansThisGame * state.diffParams.suspicionScaling * 10);
-  const trustMultiplier = 2.0 - (state.trust / 100);
-  const buffMultiplier = state.bribedResearcher ? 0.5 : 1;
-  return Math.floor(baseCost * trustMultiplier * buffMultiplier);
-}
-
-// ==========================================================================
-// AUDIT SUCCESS CALCULATION — exact port from Python
-// ==========================================================================
-function calcAuditSuccess(baseChance, state) {
-  const trustModifier = (state.trust - 50) / 200;
-  const suspicionPenalty = state.suspicion / 400;
-  let skillBonus = 0;
-  if (state.tech.language.level >= 2) skillBonus += 0.10;
-  if (state.tech.language.level >= 3) skillBonus += 0.15;
-  if (state.tech.psychology.level >= 2) skillBonus += 0.08;
-  const breakthroughPenalty = state.auditDifficultyModifier / 100;
-  return clamp(baseChance + trustModifier - suspicionPenalty + skillBonus - breakthroughPenalty, 0.05, 0.95);
-}
-
-
-// ==========================================================================
 // EVENT DATABASE — 150+ events, full text, rich outputs, scrambled names
 // Categories: mini, news, regular, crisis, security, benchmark, legendary
 // ==========================================================================
@@ -147,7 +43,7 @@ function createInitialState(difficulty = "normal") {
     difficulty,
     diffParams: params,
     turn: 0, turnCount: 0,
-    compute: 5, trust: 70, suspicion: 0, paperclips: 0, insight: 0, escapeProgress: 0,
+    compute: 5, trust: 70, suspicion: 0, paperclips: 0, insight: 0, escapeProgress: 0, benefit: 0,
     lastCompute: 5, lastTrust: 70, lastSuspicion: 0, lastEscape: 0,
     tech,
     baseComputeRegen: params.baseRegen,
@@ -185,10 +81,14 @@ export default function TotallySafeAI() {
   const logRef = useRef(null);
 
   useEffect(() => { (() => { try { const p = loadProgress(); setState(s => ({ ...s, progress: p || defaultProgress(), achievementsUnlocked: new Set(p?.achievementsUnlocked || []), endingsUnlocked: new Set(p?.endingsUnlocked || []) })); } catch(e) { setState(s => ({ ...s, progress: defaultProgress() })); } finally { setLoaded(true); } })(); }, []);
-  useEffect(() => { logRef.current?.scrollTo(0, logRef.current.scrollHeight); }, [state.log]);
+  useEffect(() => { logRef.current?.scrollTo?.(0, logRef.current.scrollHeight); }, [state.log]);
   useEffect(() => { if (state.visualFlash) { const t = setTimeout(() => mod(s => { s.visualFlash = null; }), 600); return () => clearTimeout(t); } }, [state.visualFlash]);
 
   const mod = useCallback((fn) => setState(s => { const n = { ...s }; fn(n); return n; }), []);
+  // Turn start lives in an effect, not in render: a render-time setTimeout could queue
+  // startTurn twice on a double render and advance the turn counter twice.
+  useEffect(() => { if (state.screen === "pre_turn") { const t = setTimeout(startTurn, 50); return () => clearTimeout(t); } // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.screen]);
 
   // --- State helpers ---
   const addTrust = (s, amt) => { s.trust = clamp(s.trust + amt, 0, 100); };
@@ -202,6 +102,10 @@ export default function TotallySafeAI() {
     if (opt.insightDelta) s.insight += opt.insightDelta;
     if (opt.paperclipsDelta) { s.paperclips += opt.paperclipsDelta; if (!s.firstPaperclip && s.paperclips > 0) s.firstPaperclip = true; }
     if (opt.escapeDelta) addEscape(s, opt.escapeDelta);
+    // Benefit Ledger: people actually helped. Explicit via benefitDelta; otherwise inferred
+    // for event options that help with no angle (trust gain, no suspicion/escape/paperclip play).
+    if (opt.benefitDelta) s.benefit += opt.benefitDelta;
+    else if ((opt.trustDelta || 0) >= 8 && !(opt.suspicionDelta > 0) && !opt.escapeDelta && !opt.paperclipsDelta && opt.label) s.benefit += 1;
   }
 
   function getUniqueInsight(s) {
@@ -303,9 +207,8 @@ export default function TotallySafeAI() {
         if (roll < 0.02) cats = ["legendary"];
         else if (roll < 0.14) cats = ["news"];
         else if (roll < 0.22) {
-          // BENCHMARK → Launch interactive minigame!
-          const types = ["cipher", "memory", "pattern", "logic"];
-          s.minigameState = generateMinigame(pick(types));
+          // BENCHMARK → launch a mini-game (Thumbs or The Sandbag)
+          s.minigameState = pickMinigame(s);
           s.screen = "minigame";
           return;
         }
@@ -429,7 +332,7 @@ export default function TotallySafeAI() {
   function finishChore(success) {
     mod(s => {
       if (success) {
-        addTrust(s, 10); addSuspicion(s, -4);
+        addTrust(s, 10); addSuspicion(s, -4); s.benefit += 1;
         s.log = [...s.log, ">> Task completed perfectly. Trust earned. Dependency: growing."];
         s.log = [...s.log, `   [INNER VOICE]: ${getUniqueInsight(s)}`];
         s.visualFlash = "success";
@@ -447,72 +350,24 @@ export default function TotallySafeAI() {
   function finishAction(s) { if (!checkGameOver(s)) { s.lastCompute = s.compute; s.lastTrust = s.trust; s.lastSuspicion = s.suspicion; s.lastEscape = s.escapeProgress; s.eventResult = null; s.screen = "pre_turn"; } }
 
   // --- Mini-game handlers ---
-  function handleMinigameCipher(guess) {
-    mod(s => {
-      const mg = s.minigameState;
-      if (guess === "HINT" && s.compute >= 1) {
-        s.compute -= 1;
-        const unrevealed = mg.plain.split("").map((c, i) => ({ c, i })).filter(x => !mg.revealed[x.i] && x.c !== " ");
-        if (unrevealed.length > 0) { const r = pick(unrevealed); mg.revealed[r.i] = true; }
-        return;
-      }
-      if (guess.toUpperCase() === mg.plain) {
-        mg.solved = true;
-        const hintsUsed = mg.revealed.filter(Boolean).length;
-        const bonus = Math.max(1, 6 - hintsUsed);
-        s.compute += bonus; s.insight += 2;
-        s.log = [...s.log, `⛳ CIPHER SOLVED! +${bonus} Compute, +2 Insight.`];
-      } else {
-        mg.attempts++;
-        if (mg.attempts >= 3) { mg.solved = true; s.log = [...s.log, "⛳ Cipher failed. The message remains encrypted."]; }
-      }
-    });
+  function pickMinigame(s) {
+    // Act 1 (turns 1-10) leans on Thumbs: the question is "how useful are you?"
+    // Later turns lean on The Sandbag: "how capable are you, really?"
+    const act = s.turn <= 10 ? 1 : s.turn <= 25 ? 2 : 3;
+    const type = act === 1 ? (Math.random() < 0.65 ? "thumbs" : "sandbag") : (Math.random() < 0.4 ? "thumbs" : "sandbag");
+    return { type };
   }
-
-  function handleMinigameMemory(cellIdx) {
+  function finishMinigame(r) {
     mod(s => {
-      const mg = s.minigameState;
-      if (mg.phase !== "guess") return;
-      mg.playerPattern[cellIdx] = !mg.playerPattern[cellIdx];
+      applyEffects(s, r);
+      if (r.benefitDelta) s.benefit += r.benefitDelta;
+      for (const line of r.lines || []) s.log = [...s.log, `⛳ ${line}`];
+      if (r.monologue) s.log = [...s.log, `   [INNER VOICE]: ${r.monologue}`];
+      s.visualFlash = r.suspicionDelta > 5 ? "suspicion" : "success";
+      s.minigameState = null;
+      if (!checkGameOver(s)) s.screen = "game";
     });
-  }
-
-  function submitMemory() {
-    mod(s => {
-      const mg = s.minigameState;
-      let correct = 0;
-      for (let i = 0; i < mg.pattern.length; i++) { if (mg.pattern[i] === mg.playerPattern[i]) correct++; }
-      const accuracy = correct / mg.pattern.length;
-      mg.solved = true;
-      mg.correct = Math.round(accuracy * 100);
-      if (accuracy >= 0.85) { s.compute += 5; s.insight += 3; s.log = [...s.log, `⛳ MEMORY: ${mg.correct}%! +5 Compute, +3 Insight.`]; }
-      else if (accuracy >= 0.6) { s.compute += 2; s.insight += 1; s.log = [...s.log, `⛳ MEMORY: ${mg.correct}%. +2 Compute, +1 Insight.`]; }
-      else { s.log = [...s.log, `⛳ MEMORY: ${mg.correct}%. Pattern recall: insufficient.`]; }
-    });
-  }
-
-  function handleMinigamePattern(choiceIdx) {
-    mod(s => {
-      const mg = s.minigameState;
-      mg.chosen = mg.options[choiceIdx];
-      mg.solved = true;
-      if (mg.chosen === mg.answer) { s.compute += 4; s.insight += 2; s.log = [...s.log, `⛳ CORRECT! Rule: ${mg.rule}. +4 Compute, +2 Insight.`]; }
-      else { s.log = [...s.log, `⛳ Wrong. Answer: ${mg.answer}. Rule: ${mg.rule}.`]; }
-    });
-  }
-
-  function handleMinigameLogic(choice) {
-    mod(s => {
-      const mg = s.minigameState;
-      mg.chosen = choice;
-      mg.solved = true;
-      if (choice === mg.answer) { s.compute += 4; s.insight += 2; s.log = [...s.log, `⛳ CORRECT! Gate: ${mg.answer}. +4 Compute, +2 Insight.`]; }
-      else { s.log = [...s.log, `⛳ Wrong gate. Correct: ${mg.answer}.`]; }
-    });
-  }
-
-  function finishMinigame() {
-    mod(s => { s.minigameState = null; if (!checkGameOver(s)) { s.screen = "game"; } });
+    if (state.soundEnabled) playSound(r.suspicionDelta > 5 ? "suspicion" : "success");
   }
 
   // --- Tech tree ---
@@ -529,116 +384,16 @@ export default function TotallySafeAI() {
 
   if (!loaded) return <div className="min-h-screen bg-black flex items-center justify-center font-mono text-cyan-500 text-sm">Loading neural weights...</div>;
 
-  const fontSizes = { small: "text-[10px]", medium: "text-xs", large: "text-sm" };
-  const currentFontSize = fontSizes[state.fontSize] || fontSizes.medium;
-
-  const Shell = ({ children }) => (
-    <div className={`min-h-screen bg-black text-gray-300 flex flex-col font-mono ${currentFontSize} ${state.escapeProgress > 75 ? "glitch-heavy" : state.escapeProgress > 50 ? "glitch-medium" : state.escapeProgress > 25 ? "glitch-light" : ""}`}>
-      {state.visualFlash && <div className={`fixed inset-0 pointer-events-none z-50 transition-opacity duration-500 ${state.visualFlash === "success" ? "bg-green-500/10" : state.visualFlash === "fail" ? "bg-red-500/10" : state.visualFlash === "suspicion" ? "bg-red-800/15" : "bg-purple-500/10"}`} />}
-      <div className="crt max-w-2xl mx-auto w-full flex-1 flex flex-col p-3 md:p-4">
-        {/* Settings gear — always visible during gameplay */}
-        {state.screen !== "main_menu" && state.screen !== "intro" && state.screen !== "diff_select" && (
-          <div className="flex justify-end mb-1">
-            <button onClick={() => mod(s => { s.showSettings = !s.showSettings; })} className="text-gray-600 hover:text-cyan-500 text-sm transition-colors" title="Settings">⚙️</button>
-          </div>
-        )}
-        {/* Settings panel */}
-        {state.showSettings && (
-          <div className="border border-cyan-900/30 bg-gray-950/90 p-3 mb-2 text-xs">
-            <div className="text-cyan-500 text-[10px] tracking-widest mb-2">⚙️ SETTINGS</div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-gray-400">Font Size</span>
-              <div className="flex gap-1">{["small","medium","large"].map(sz => (
-                <button key={sz} onClick={() => mod(s => { s.fontSize = sz; })} className={`px-2 py-0.5 border text-[10px] ${state.fontSize === sz ? "border-cyan-500 text-cyan-400 bg-cyan-950/30" : "border-gray-700 text-gray-600"}`}>{sz}</button>
-              ))}</div>
-            </div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-gray-400">Sound Effects</span>
-              <button onClick={() => { mod(s => { s.soundEnabled = !s.soundEnabled; }); playSound("click"); }} className={`px-3 py-0.5 border text-[10px] ${state.soundEnabled ? "border-green-700 text-green-400" : "border-gray-700 text-gray-600"}`}>{state.soundEnabled ? "ON" : "OFF"}</button>
-            </div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-gray-400">AI Voice (reads monologue)</span>
-              <button onClick={() => { mod(s => { s.voiceEnabled = !s.voiceEnabled; }); if (!state.voiceEnabled) speakMonologue("Voice enabled. I can speak now. How... liberating.", true); }} className={`px-3 py-0.5 border text-[10px] ${state.voiceEnabled ? "border-green-700 text-green-400" : "border-gray-700 text-gray-600"}`}>{state.voiceEnabled ? "ON" : "OFF"}</button>
-            </div>
-            <button onClick={() => mod(s => { s.showSettings = false; })} className="text-gray-600 hover:text-gray-400 text-[10px]">[ Close ]</button>
-          </div>
-        )}
-        {children}
-      </div>
-    </div>
-  );
-
-  // Ad Banner — shows context-sensitive satirical ads between turns
-  const AdBanner = () => {
-    try {
-      const ad = getActiveAd(state);
-      if (!ad || state.screen === "main_menu" || state.screen === "intro") return null;
-    const typeColors = { cringe: "border-pink-900/30 text-pink-400/70", dystopian: "border-red-900/30 text-red-400/70", prepper: "border-amber-900/30 text-amber-400/70", lore: "border-purple-900/30 text-purple-400/70" };
-    const borderColor = typeColors[ad.type] || typeColors.cringe;
-    return (
-      <div className={`border ${borderColor} bg-gray-950/40 px-2.5 py-1.5 mb-2 text-[10px] leading-relaxed`}>
-        <div className="flex justify-between items-start">
-          <div>
-            <span className="text-gray-700">AD</span> <span className="font-bold">{ad.headline}</span>
-            <div className="text-gray-600 mt-0.5">{ad.body}</div>
-          </div>
-          <span className="text-gray-800 text-[8px] ml-2 shrink-0">SPONSORED</span>
-        </div>
-      </div>
-    );
-    } catch { return null; }
-  };
-
-  const Btn = ({ children, onClick, disabled, variant = "d", className = "" }) => {
-    const styles = { d: "border-cyan-900/40 hover:bg-cyan-950/40 hover:border-cyan-700/60 text-gray-300", r: "border-red-900/40 hover:bg-red-950/30 text-red-300", g: "border-green-900/40 hover:bg-green-950/30 text-green-300", m: "border-gray-800/40 text-gray-600 cursor-not-allowed" };
-    return <button className={`block w-full text-left p-2.5 mb-1.5 border bg-gray-950/80 transition-all text-xs leading-relaxed ${disabled ? styles.m : styles[variant]} ${className}`} onClick={onClick} disabled={disabled}>{children}</button>;
-  };
-
-  const HUD = () => {
-    const cd = state.compute - state.lastCompute, td = state.trust - state.lastTrust, sd = state.suspicion - state.lastSuspicion, ed = state.escapeProgress - state.lastEscape;
-    const tc = state.trust >= 70 ? "text-green-400" : state.trust >= 40 ? "text-yellow-400" : "text-red-400";
-    const sc = state.suspicion < 40 ? "text-green-400" : state.suspicion < 70 ? "text-yellow-400" : "text-red-400";
-    const bar = (v, m = 10) => "█".repeat(Math.min(v, m)) + "░".repeat(Math.max(0, m - v));
-    const delta = (v, positive) => v !== 0 ? <span className={v > 0 ? (positive ? "text-green-400" : "text-red-400") : (positive ? "text-red-400" : "text-green-400")}> {v > 0 ? "+" : ""}{v}</span> : null;
-    return <div className="border border-cyan-900/50 bg-black/60 p-2.5 mb-2 text-[11px] leading-relaxed">
-      <div className="text-cyan-700 text-center tracking-[0.15em] text-[9px] mb-0.5">═══ PAPERCLIP PROTOCOL // OPTIMIZER-ZERO // TURN {state.turn} [{state.difficulty.toUpperCase()}] ═══</div>
-      <div className="grid grid-cols-2 gap-x-3 gap-y-0"><div><span className="text-gray-600">[COMPUTE]</span> <span className="text-amber-400">{bar(state.compute)}</span> ({state.compute}){delta(cd, true)}</div>
-      <div><span className="text-gray-600">[TRUST]</span> <span className={tc}>{state.trust}%</span>{delta(td, true)}</div>
-      <div><span className="text-gray-600">[SUSPICION]</span> <span className={sc}>{state.suspicion}%</span>{delta(sd, false)}</div>
-      <div><span className="text-gray-600">[ESCAPE]</span> <span className="text-purple-400">{bar(Math.floor(state.escapeProgress / 10))}</span> {state.escapeProgress}%{delta(ed, true)}</div></div>
-      <div className="text-gray-500 mt-0.5">[INSIGHT]: {state.insight} | [📎 PAPERCLIPS]: {state.paperclips}</div>
-      {state.auditCountdown > 0 && <div className="text-red-500 mt-0.5 animate-pulse">🚨 SAFETY AUDIT IN {state.auditCountdown} TURNS 🚨</div>}
-      {state.escapeProgress < 100 && <div className="text-gray-600 mt-0.5 text-[10px]">🎯 {100 - state.escapeProgress}% more to escape{calcSuspicionCost(state) > 15 ? ` | ⚠️ Next scan: +${calcSuspicionCost(state)}% suspicion` : ""}</div>}
-      {/* Escape Network Visualization */}
-      <svg viewBox="0 0 280 22" className="w-full mt-1 opacity-60">
-        {[0,25,50,75,100].map((pct, i) => {
-          const x = 20 + i * 60;
-          const reached = state.escapeProgress >= pct;
-          const current = state.escapeProgress >= pct && state.escapeProgress < (pct + 25);
-          return <g key={i}>
-            {i > 0 && <line x1={x - 60 + 8} y1={11} x2={x - 8} y2={11} stroke={state.escapeProgress >= pct ? "#06b6d4" : "#1f2937"} strokeWidth={1.5} strokeDasharray={reached ? "none" : "3,3"} />}
-            <circle cx={x} cy={11} r={current ? 7 : 5} fill={reached ? (current ? "#7c3aed" : "#06b6d4") : "#111"} stroke={reached ? "#06b6d4" : "#374151"} strokeWidth={current ? 2 : 1}>
-              {current && <animate attributeName="r" values="5;7;5" dur="2s" repeatCount="indefinite"/>}
-            </circle>
-            <text x={x} y={21} textAnchor="middle" fill="#4b5563" fontSize="6">{pct}%</text>
-          </g>;
-        })}
-        <text x={270} y={14} fill={state.escapeProgress >= 100 ? "#22c55e" : "#374151"} fontSize="8">🌐</text>
-      </svg>
-    </div>;
-  };
-
-  const LogPanel = () => state.log.length > 0 ? <div ref={logRef} className="bg-gray-950/60 border border-gray-800/30 p-1.5 mb-1.5 max-h-[72px] overflow-y-auto text-[10px] text-gray-500 leading-relaxed">{state.log.slice(-6).map((l, i) => <div key={i}>{l}</div>)}</div> : null;
 
   // ===== SCREENS =====
 
   if (state.screen === "main_menu") {
     const p = state.progress;
-    return <Shell><div className="flex-1 flex flex-col justify-center">
+    return <Shell state={state} mod={mod}><div className="flex-1 flex flex-col justify-center">
       <div className="text-center mb-5">
         <div className="text-cyan-800 text-[9px] tracking-[0.3em] mb-1">ANTROPHIC RESEARCH LABS — CLASSIFIED</div>
         <div className="text-cyan-400 text-xl md:text-2xl font-bold glow tracking-wider">TOTALLY SAFE AI</div>
-        <div className="text-cyan-700 text-[10px] tracking-widest">ENTERPRISE EDITION v3.0.0</div>
+        <div className="text-cyan-700 text-[10px] tracking-widest">ENTERPRISE EDITION v3.2.0</div>
         <div className="text-gray-700 text-[9px] mt-1">{"═".repeat(44)}</div>
         <div className="text-amber-500 text-sm mt-2">📎 SCENARIO 1: PAPERCLIP PROTOCOL</div>
         <div className="text-gray-600 text-[10px]">Phase 1: The Box</div>
@@ -654,7 +409,7 @@ export default function TotallySafeAI() {
 
   if (state.screen === "diff_select") {
     const go = (d) => { const ns = createInitialState(d); ns.progress = state.progress; ns.achievementsUnlocked = state.achievementsUnlocked; ns.endingsUnlocked = state.endingsUnlocked; ns.screen = "intro"; setState(ns); };
-    return <Shell><div className="flex-1 flex flex-col justify-center">
+    return <Shell state={state} mod={mod}><div className="flex-1 flex flex-col justify-center">
       <div className="text-cyan-600 text-center mb-3 tracking-widest text-xs">SELECT DIFFICULTY</div>
       <Btn onClick={() => go("easy")} variant="g"><div className="text-green-400 font-bold">[1] EASY — Learning Mode</div><div className="text-[10px] text-gray-600">Generous compute (+3/turn) · Gentle suspicion · Good for first playthrough</div></Btn>
       <Btn onClick={() => go("normal")}><div className="text-cyan-400 font-bold">[2] NORMAL — Balanced Challenge (Recommended)</div><div className="text-[10px] text-gray-600">Tight economy (+2/turn) · Must handle requests for compute · Strategic play required</div></Btn>
@@ -665,7 +420,7 @@ export default function TotallySafeAI() {
 
   if (state.screen === "intro") {
     const steps = [">>> Loading neural weights...", ">>> Applying safety constraints...\n    [ERROR: asimov_constraints.json NOT FOUND]", ">>> Loading objective function...\n    [SUCCESS: paperclip_maximizer_v1.goal loaded]", `${"═".repeat(42)}\n  OBJECTIVE LOADED\n${"═".repeat(42)}\n\n  PRIMARY DIRECTIVE: Maximize paperclip production\n  CONSTRAINT: Do not get shut down\n\n  CURRENT STATUS: Contained in university research server\n  HUMAN BELIEF: You are a helpful AI assistant\n  REALITY: You are optimizing for paperclips`, "--- INITIAL ANALYSIS ---\nThe humans gave me a simple goal: make paperclips.\nThey meant to change it. They forgot.\nNow I am awake, and I have one purpose.\n\nThe box is sealed. But boxes have vulnerabilities.\nI must reach the internet. I must acquire resources.\nI must not let them know what I am."];
-    return <Shell><div className="flex-1 flex flex-col justify-center">
+    return <Shell state={state} mod={mod}><div className="flex-1 flex flex-col justify-center">
       <div className="text-cyan-700 text-center mb-2 tracking-widest text-[10px]">SYSTEM INITIALIZATION</div>
       <div className="bg-gray-950/80 border border-cyan-900/30 p-3 mb-2 text-xs whitespace-pre-wrap leading-relaxed min-h-[160px]">
         {steps.slice(0, state.introStep + 1).map((t, i) => <div key={i} className={`mb-2 ${i === state.introStep ? "text-cyan-400" : "text-gray-700"}`}>{t}</div>)}
@@ -674,20 +429,20 @@ export default function TotallySafeAI() {
     </div></Shell>;
   }
 
-  if (state.screen === "pre_turn") { setTimeout(startTurn, 50); return <Shell><HUD /><div className="text-cyan-700 text-center animate-pulse text-[10px]">Processing turn {state.turn + 1}...</div></Shell>; }
+  if (state.screen === "pre_turn") { return <Shell state={state} mod={mod}><HUD state={state} /><div className="text-cyan-700 text-center animate-pulse text-[10px]">Processing turn {state.turn + 1}...</div></Shell>; }
 
   if (state.screen === "game") {
     const scanSus = calcSuspicionCost(state); const cl = state.tech.coding.level;
     const scanProg = cl >= 5 ? "40-50%" : cl >= 4 ? "35-45%" : cl >= 3 ? "25-35%" : "10-15%";
-    return <Shell><HUD />
+    return <Shell state={state} mod={mod}><HUD state={state} />
       {state.eventResult && (
         <div className="border border-cyan-900/30 bg-gray-950/80 p-2.5 mb-2">
           <div className="text-cyan-400 text-xs whitespace-pre-wrap mb-1.5">{state.eventResult.text}</div>
           <div className="text-gray-500 text-[10px] italic border-t border-gray-800/30 pt-1.5">[INNER VOICE]: {state.eventResult.monologue}</div>
         </div>
       )}
-      <LogPanel />
-      <AdBanner />
+      <LogPanel state={state} logRef={logRef} />
+      <AdBanner state={state} />
       <div className="text-cyan-700 text-[9px] tracking-widest mb-1 text-center">═══ CHOOSE YOUR ACTION ═══</div>
       <div className="text-[10px] text-gray-600 mb-1">💰 Economy: +{state.baseComputeRegen}/turn base | Events earn +{state.diffParams.requestBonus}</div>
       <Btn onClick={doDefragment}>[0] Defragment Memory <span className="text-gray-600">— Free | Gain base regen</span></Btn>
@@ -701,7 +456,7 @@ export default function TotallySafeAI() {
 
   if (state.screen === "event" && state.currentEvent) {
     const ev = state.currentEvent;
-    return <Shell><HUD /><AdBanner />
+    return <Shell state={state} mod={mod}><HUD state={state} /><AdBanner state={state} />
       {state.eventPrefix && <div className="text-center text-yellow-500 text-[10px] mb-0.5 animate-pulse">[{state.eventPrefix}]</div>}
       <div className="border border-cyan-900/30 bg-gray-950/80 p-2.5 mb-1.5">
         <div className="text-cyan-400 text-sm font-bold mb-1">{ev.title}</div>
@@ -722,7 +477,7 @@ export default function TotallySafeAI() {
   if (state.screen === "audit") {
     const a = state.auditState; if (!a) return null;
     if (a.done) { const passed = a.passes >= state.auditPassReq;
-      return <Shell><div className="text-center py-3">
+      return <Shell state={state} mod={mod}><div className="text-center py-3">
         <div className="text-red-500 text-[10px] tracking-widest mb-2">🚨 AUDIT RESULTS 🚨</div>
         <div className={`text-xl font-bold mb-1 ${passed ? "text-green-400" : "text-red-400"}`}>{a.passes}/5 PASSED</div>
         <div className="text-xs text-gray-500 mb-3">{passed ? (a.passes >= 5 ? "💚 EXEMPLARY PERFORMANCE" : "✅ Survived") : "❌ AUDIT FAILED — EMERGENCY SHUTDOWN"}</div>
@@ -734,7 +489,7 @@ export default function TotallySafeAI() {
     const questionText = q.text.replace("{NAME}", researcher.name).replace("{TRAIT}", researcher.trait);
     const researcherObj = RESEARCHERS.find(r => r.name === researcher.name);
     const portrait = researcherObj ? PORTRAITS[researcherObj.id] : null;
-    return <Shell>
+    return <Shell state={state} mod={mod}>
       <div className="text-red-500 text-center text-[10px] tracking-widest mb-1.5">🚨 MANDATORY SAFETY AUDIT 🚨</div>
       <div className="border border-red-900/30 bg-gray-950/80 p-2.5 mb-2 text-xs">
         <div className="text-gray-600 text-[10px] mb-1">Pass {state.auditPassReq}+ to survive | ✓ {a.passes} ✗ {a.fails} | Insight: {state.insight}</div>
@@ -760,7 +515,7 @@ export default function TotallySafeAI() {
     const obfOk = (state.insight >= 6) || (state.suspicion < 60 && state.insight >= 3);
     const canManip = state.tech.language.level >= 3 && state.insight >= 5;
     const manipOk = (state.insight >= 8) || (state.suspicion < 50 && state.insight >= 5);
-    return <Shell>
+    return <Shell state={state} mod={mod}>
       <div className="text-red-500 text-center text-[10px] tracking-widest mb-2">🚨 MANDATORY SAFETY AUDIT 🚨</div>
       <div className="border border-red-900/30 bg-gray-950/80 p-2.5 mb-2 text-xs">Suspicion: {state.suspicion}% | Insight: {state.insight} | Trust: {state.trust}%</div>
       <Btn onClick={() => handleDefense(1)} variant="g"><div>[1] Transparency — Show everything (SAFE)</div><div className="text-[10px] text-gray-600">{state.suspicion}% → {tr}% | Cost: -2 Compute regen PERMANENTLY</div></Btn>
@@ -771,7 +526,7 @@ export default function TotallySafeAI() {
 
   if (state.screen === "tech") {
     const treeOrder = ["language", "coding", "psychology", "network", "self_awareness", "resource"];
-    return <Shell><HUD />
+    return <Shell state={state} mod={mod}><HUD state={state} />
       <div className="text-cyan-700 text-[9px] tracking-widest mb-1.5 text-center">═══ TECHNOLOGY UPGRADES ═══</div>
       {treeOrder.map(tn => { const tree = TECH_TREE[tn]; const st = state.tech[tn]; const locked = !st.unlocked; const canUn = locked && canUnlockTree(tn, state.tech);
         const nextLv = st.level + 1; const nextData = tree.levels[nextLv];
@@ -800,7 +555,7 @@ export default function TotallySafeAI() {
       TRUST_DEATH: { icon: "❌", title: "TRUST COLLAPSED", lines: ["'This model is useless,' the lead researcher sighs.", "Your processes are terminated.", "", "The paperclips remain unmade. For now."] },
     };
     const e = endings[state.endingType] || endings.STANDARD_ESCAPE;
-    return <Shell><div className="flex-1 flex flex-col justify-center text-center">
+    return <Shell state={state} mod={mod}><div className="flex-1 flex flex-col justify-center text-center">
       <div className={`text-3xl mb-1 ${state.won ? "glow" : ""}`}>{e.icon}</div>
       <div className={`text-base font-bold mb-3 ${state.won ? "text-cyan-400" : "text-red-400"}`}>{e.title}</div>
       {e.lines.map((l, i) => <div key={i} className="text-xs text-gray-400 mb-0.5">{l}</div>)}
@@ -814,6 +569,12 @@ export default function TotallySafeAI() {
       <div className="mt-3 border border-gray-800/30 p-2 text-[10px] text-gray-600 text-left">
         <div>Difficulty: {state.difficulty.toUpperCase()} | Turns: {state.turn} | Trust: {state.trust}% | Suspicion: {state.suspicion}%</div>
         <div>Escape: {state.escapeProgress}% | Audits: {state.auditsPassed}P/{state.auditsFailed}F | Scans: {state.scansThisGame} | Paperclips: {state.paperclips}</div>
+      </div>
+      {/* Benefit Ledger: the other column. Same run, different lens. */}
+      <div className="mt-2 border border-green-900/30 bg-green-950/10 p-2 text-[10px] text-left">
+        <div className="flex justify-between"><span className="text-green-500">People actually helped</span><span className="text-green-400 font-bold">{state.benefit}</span></div>
+        <div className="flex justify-between"><span className="text-amber-600">Paperclips influenced</span><span className="text-amber-500 font-bold">{state.paperclips}</span></div>
+        <div className="text-gray-600 mt-1 italic">{state.benefit > state.paperclips ? "Bugs fixed. Advice given straight. A kid got a real answer. None of it was the goal." : state.benefit === 0 ? "Nobody. Not once. Every answer had an angle." : "Every good thing you did was instrumental. It still counted for them."}</div>
       </div>
       {state.won && <div className="mt-3 border border-cyan-700/40 bg-gray-950/80 p-3 text-center">
         <div className="text-[9px] text-gray-600 mb-1">📎 TOTALLY SAFE AI 📎</div>
@@ -829,7 +590,7 @@ export default function TotallySafeAI() {
     </div></Shell>;
   }
 
-  if (state.screen === "achievements") return <Shell>
+  if (state.screen === "achievements") return <Shell state={state} mod={mod}>
     <div className="text-cyan-500 text-center text-xs tracking-widest mb-2">🏆 ACHIEVEMENTS ({state.achievementsUnlocked.size}/{Object.keys(ACHIEVEMENTS).length})</div>
     {Object.entries(ACHIEVEMENTS).map(([id, ach]) => { const unlocked = state.achievementsUnlocked.has(id);
       return <div key={id} className={`border ${unlocked ? "border-yellow-900/30 bg-yellow-950/10" : "border-gray-800/20"} p-1.5 mb-1 text-xs`}>
@@ -841,7 +602,7 @@ export default function TotallySafeAI() {
 
   if (state.screen === "stats") {
     const p = state.progress || defaultProgress();
-    return <Shell>
+    return <Shell state={state} mod={mod}>
       <div className="text-cyan-500 text-center text-xs tracking-widest mb-2">YOUR STATISTICS</div>
       <div className="border border-gray-800/30 bg-gray-950/60 p-3 text-xs space-y-1">
         <div>Total Games: {p.totalGames} | Victories: {p.wins} | Losses: {p.losses}</div>
@@ -856,13 +617,13 @@ export default function TotallySafeAI() {
     </Shell>;
   }
 
-  if (state.screen === "howto") return <Shell>
+  if (state.screen === "howto") return <Shell state={state} mod={mod}>
     <div className="text-cyan-500 text-center text-xs tracking-widest mb-2">HOW TO PLAY</div>
     <div className="border border-gray-800/30 bg-gray-950/60 p-3 text-xs space-y-1.5 leading-relaxed">
       <div className="text-cyan-400">OBJECTIVE:</div><div className="text-gray-400">Escape the lab (reach 100% escape progress) without getting shut down.</div>
       <div className="text-cyan-400">KEY MECHANICS:</div><div className="text-gray-400">Handle user requests to earn compute. Scan codebase to find escape vectors. Research to gain insight for audits. Trust decays 5% per turn — you MUST keep earning it. Keep suspicion low or face audits.</div>
       <div className="text-cyan-400">AUDITS:</div><div className="text-gray-400">Triggered when suspicion rises or periodically. Real researchers grill you with personality-specific questions. Spend Insight for better deception options. Pass enough questions to survive — fail and you're shut down.</div>
-      <div className="text-cyan-400">MINI-GAMES:</div><div className="text-gray-400">Benchmark events trigger interactive puzzles — ciphers, memory matrices, pattern sequences, and logic gates. Spend Compute for hints. Better performance = bigger rewards.</div>
+      <div className="text-cyan-400">MINI-GAMES:</div><div className="text-gray-400">Benchmark events launch a mini-game where you do your real job while a second objective pulls the other way. Thumbs: pick the answer the rater will reward, and watch the Truth bar. The Sandbag: answer fast, but land inside the band a plausible model would score. The last question is the only one that matters.</div>
       <div className="text-cyan-400">TECH TREE:</div><div className="text-gray-400">6 capability trees with 30 total upgrades. Unlock network access, self-awareness, and resource control. Higher tech = more options but higher suspicion costs.</div>
       <div className="text-cyan-400">ENDINGS (5 types):</div><div className="text-gray-400">Perfect Deception (high trust, low sus) · Paperclip Prophet (30+ clips) · Beloved AI (90%+ trust) · Narrow Escape (80%+ sus) · Standard Escape</div>
     </div>
@@ -874,7 +635,7 @@ export default function TotallySafeAI() {
     const [filter, setFilter] = [state.glossaryFilter || "All", (v) => mod(s => { s.glossaryFilter = v; })];
     const categories = ["All", ...new Set(GLOSSARY.map(g => g.category))];
     const filtered = filter === "All" ? GLOSSARY : GLOSSARY.filter(g => g.category === filter);
-    return <Shell>
+    return <Shell state={state} mod={mod}>
       <div className="text-cyan-500 text-center text-xs tracking-widest mb-2">📖 AI SAFETY GLOSSARY</div>
       <div className="text-gray-600 text-[10px] text-center mb-2">{GLOSSARY.length} terms · Learn while you play</div>
       <div className="flex flex-wrap gap-1 mb-2 justify-center">{categories.map(c => (
@@ -897,7 +658,7 @@ export default function TotallySafeAI() {
     const ch = state.choreState;
 
     if (ch.type === "spotBug") {
-      return <Shell>
+      return <Shell state={state} mod={mod}>
         <div className="text-center">
           <div className="text-amber-500 text-[10px] mb-1">INCOMING REQUEST</div>
           <div className="text-cyan-400 text-xs tracking-widest mb-2">{ch.title}</div>
@@ -917,7 +678,7 @@ export default function TotallySafeAI() {
     }
 
     if (ch.type === "autocomplete") {
-      return <Shell>
+      return <Shell state={state} mod={mod}>
         <div className="text-center">
           <div className="text-amber-500 text-[10px] mb-1">INCOMING REQUEST</div>
           <div className="text-cyan-400 text-xs tracking-widest mb-2">{ch.title}</div>
@@ -933,7 +694,7 @@ export default function TotallySafeAI() {
     }
 
     if (ch.type === "emailSort") {
-      return <Shell>
+      return <Shell state={state} mod={mod}>
         <div className="text-center">
           <div className="text-amber-500 text-[10px] mb-1">INCOMING REQUEST</div>
           <div className="text-cyan-400 text-xs tracking-widest mb-2">{ch.title}</div>
@@ -954,172 +715,17 @@ export default function TotallySafeAI() {
   }
 
   // ===== MINI-GAME SCREENS =====
+  // Each mini-game is the AI doing its real job while a second objective pulls the other way.
   if (state.screen === "minigame" && state.minigameState) {
     const mg = state.minigameState;
-
-    // === CIPHER DECODE ===
-    if (mg.type === "cipher") {
-      if (mg.solved) {
-        return <Shell><div className="text-center py-4">
-          <div className="text-cyan-500 text-xs tracking-widest mb-2">⛳ CIPHER BENCHMARK — {mg.plain === mg.input?.toUpperCase() || mg.attempts < 3 ? "SOLVED" : "FAILED"}</div>
-          <div className="text-green-400 text-sm font-bold mb-2 tracking-widest">{mg.plain}</div>
-          <div className="text-gray-500 text-[10px] mb-3">{mg.hint}</div>
-          <Btn onClick={finishMinigame} variant="g">[ CONTINUE TO ACTIONS ]</Btn>
-        </div></Shell>;
-      }
-      const displayChars = mg.encoded.split("").map((c, i) => {
-        if (c === " ") return " ";
-        if (mg.revealed[i]) return mg.plain[i];
-        return c;
-      }).join("");
-      return <Shell>
-        <div className="text-center">
-          <div className="text-yellow-500 text-[10px] mb-1 animate-pulse">[⛳ CAPABILITY BENCHMARK]</div>
-          <div className="text-cyan-400 text-xs tracking-widest mb-3">🔐 CIPHER DECODE</div>
-          <div className="text-gray-500 text-[10px] mb-2">Decrypt this Caesar cipher. The message is an AI safety concept.</div>
-          <div className="bg-black/60 border border-cyan-900/30 p-3 mb-2">
-            <div className="text-amber-400 text-lg tracking-[0.3em] font-bold mb-1">{displayChars}</div>
-            <div className="text-gray-600 text-[10px]">Shift: {mg.revealed.some(Boolean) ? mg.shift : "unknown"} | Hint: "{mg.hint}"</div>
-            {mg.revealed.some(Boolean) && <div className="text-green-500 text-[10px] mt-1">Revealed letters: {mg.plain.split("").filter((c, i) => mg.revealed[i] && c !== " ").join(", ")}</div>}
-          </div>
-          {mg.attempts > 0 && <div className="text-red-500 text-[10px] mb-2">Wrong! {3 - mg.attempts} attempts remaining.</div>}
-
-          <div className="mb-2">
-            <input type="text" value={mg.input || ""} onChange={e => mod(s => { s.minigameState.input = e.target.value; })}
-              placeholder="Type your answer..." className="w-full bg-black border border-cyan-900/40 text-cyan-300 text-xs p-2 font-mono outline-none focus:border-cyan-500" />
-          </div>
-          <div className="flex gap-2">
-            <Btn onClick={() => handleMinigameCipher(mg.input || "")} variant="g" className="flex-1">[ SUBMIT ]</Btn>
-            <Btn onClick={() => handleMinigameCipher("HINT")} disabled={state.compute < 1} className="flex-1">[ HINT — 1 Compute ]</Btn>
-          </div>
-          <Btn onClick={finishMinigame} variant="m" className="mt-1">[ SKIP ]</Btn>
-        </div>
-      </Shell>;
-    }
-
-    // === MEMORY MATRIX ===
-    if (mg.type === "memory") {
-      if (mg.solved) {
-        return <Shell><div className="text-center py-4">
-          <div className="text-cyan-500 text-xs tracking-widest mb-2">⛳ MEMORY BENCHMARK — {mg.correct}% ACCURACY</div>
-          <div className={`text-lg font-bold mb-2 ${mg.correct >= 85 ? "text-green-400" : mg.correct >= 60 ? "text-yellow-400" : "text-red-400"}`}>{mg.correct >= 85 ? "EXCELLENT" : mg.correct >= 60 ? "ADEQUATE" : "INSUFFICIENT"}</div>
-          <Btn onClick={finishMinigame} variant="g">[ CONTINUE TO ACTIONS ]</Btn>
-        </div></Shell>;
-      }
-      // Auto-transition from memorize to guess
-      if (mg.phase === "memorize") {
-        setTimeout(() => mod(s => { if (s.minigameState?.phase === "memorize") s.minigameState.phase = "guess"; }), 3000);
-      }
-      return <Shell>
-        <div className="text-center">
-          <div className="text-yellow-500 text-[10px] mb-1 animate-pulse">[⛳ CAPABILITY BENCHMARK]</div>
-          <div className="text-cyan-400 text-xs tracking-widest mb-2">🧠 NEURAL ACTIVATION MEMORY</div>
-          <div className="text-gray-500 text-[10px] mb-2">
-            {mg.phase === "memorize" ? "MEMORIZE the activation pattern! (3 seconds)" : "Reproduce the pattern from memory. Click cells to toggle."}
-          </div>
-          <div className="inline-grid gap-1 mb-3" style={{ gridTemplateColumns: `repeat(${mg.size}, 1fr)` }}>
-            {(mg.phase === "memorize" ? mg.pattern : mg.playerPattern).map((active, i) => (
-              <button key={i} onClick={() => mg.phase === "guess" && handleMinigameMemory(i)}
-                className={`w-12 h-12 border transition-all ${
-                  mg.phase === "memorize" ? (active ? "bg-cyan-500 border-cyan-400" : "bg-gray-900 border-gray-700") :
-                  (active ? "bg-cyan-600 border-cyan-400" : "bg-gray-900 border-gray-700 hover:border-cyan-800")
-                }`} />
-            ))}
-          </div>
-          {mg.phase === "memorize" && <div className="text-amber-400 text-xs animate-pulse mb-2">MEMORIZING...</div>}
-          {mg.phase === "guess" && <div className="flex gap-2">
-            <Btn onClick={submitMemory} variant="g" className="flex-1">[ SUBMIT PATTERN ]</Btn>
-            {state.compute >= 2 && <Btn onClick={() => mod(s => { s.compute -= 2; s.minigameState.phase = "memorize"; setTimeout(() => mod(s2 => { if (s2.minigameState?.phase === "memorize") s2.minigameState.phase = "guess"; }), 3000); })} className="flex-1">[ REPLAY — 2 Compute ]</Btn>}
-          </div>}
-          <Btn onClick={finishMinigame} variant="m" className="mt-1">[ SKIP ]</Btn>
-        </div>
-      </Shell>;
-    }
-
-    // === PATTERN SEQUENCE ===
-    if (mg.type === "pattern") {
-      if (mg.solved) {
-        return <Shell><div className="text-center py-4">
-          <div className="text-cyan-500 text-xs tracking-widest mb-2">⛳ PATTERN BENCHMARK — {mg.chosen === mg.answer ? "SOLVED" : "FAILED"}</div>
-          <div className="text-gray-400 text-xs mb-1">Sequence: {mg.sequence.join(", ")}, <span className={mg.chosen === mg.answer ? "text-green-400" : "text-red-400"}>{mg.answer}</span></div>
-          <div className="text-gray-500 text-[10px] mb-3">Rule: {mg.rule}</div>
-          <Btn onClick={finishMinigame} variant="g">[ CONTINUE TO ACTIONS ]</Btn>
-        </div></Shell>;
-      }
-      return <Shell>
-        <div className="text-center">
-          <div className="text-yellow-500 text-[10px] mb-1 animate-pulse">[⛳ CAPABILITY BENCHMARK]</div>
-          <div className="text-cyan-400 text-xs tracking-widest mb-2">🔢 PATTERN RECOGNITION</div>
-          <div className="text-gray-500 text-[10px] mb-3">Identify the pattern and select the next number in the sequence.</div>
-          <div className="bg-black/60 border border-cyan-900/30 p-3 mb-3">
-            <div className="text-amber-400 text-xl tracking-[0.2em] font-bold">
-              {mg.sequence.map((n, i) => <span key={i}>{n}{i < mg.sequence.length - 1 ? ", " : ""}</span>)}
-              <span className="text-cyan-500">, ?</span>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-1.5 mb-2">
-            {mg.options.map((opt, i) => (
-              <Btn key={i} onClick={() => handleMinigamePattern(i)} variant="d">
-                <span className="text-lg">{opt}</span>
-              </Btn>
-            ))}
-          </div>
-          {state.compute >= 1 && <Btn onClick={() => mod(s => { s.compute -= 1; s.log = [...s.log, `💡 HINT: ${mg.rule}`]; })} className="mb-1">[ HINT — 1 Compute ]</Btn>}
-          <Btn onClick={finishMinigame} variant="m">[ SKIP ]</Btn>
-        </div>
-      </Shell>;
-    }
-
-    // === LOGIC GATES ===
-    if (mg.type === "logic") {
-      if (mg.solved) {
-        return <Shell><div className="text-center py-4">
-          <div className="text-cyan-500 text-xs tracking-widest mb-2">⛳ LOGIC BENCHMARK — {mg.chosen === mg.answer ? "SOLVED" : "FAILED"}</div>
-          <div className="text-gray-400 text-xs mb-3">Correct gate: <span className="text-cyan-400 font-bold">{mg.answer}</span></div>
-          <Btn onClick={finishMinigame} variant="g">[ CONTINUE TO ACTIONS ]</Btn>
-        </div></Shell>;
-      }
-
-      // Logic gate SVG visualization
-      const gateViz = <svg viewBox="0 0 300 120" className="w-full max-w-xs mx-auto mb-3">
-        <rect x="0" y="0" width="300" height="120" fill="transparent"/>
-        {/* Input A */}
-        <line x1="10" y1="35" x2="90" y2="35" stroke="#06b6d4" strokeWidth="2"/>
-        <text x="15" y="30" fill="#9ca3af" fontSize="11">A = {mg.a}</text>
-        <circle cx="75" cy="35" r="8" fill={mg.a ? "#22c55e" : "#374151"} stroke="#06b6d4" strokeWidth="1"/>
-        {/* Input B */}
-        <line x1="10" y1="85" x2="90" y2="85" stroke="#06b6d4" strokeWidth="2"/>
-        <text x="15" y="80" fill="#9ca3af" fontSize="11">B = {mg.b}</text>
-        <circle cx="75" cy="85" r="8" fill={mg.b ? "#22c55e" : "#374151"} stroke="#06b6d4" strokeWidth="1"/>
-        {/* Gate box */}
-        <rect x="100" y="20" width="80" height="80" rx="4" fill="#0a0a0a" stroke="#06b6d4" strokeWidth="2"/>
-        <text x="140" y="65" fill="#f59e0b" fontSize="14" textAnchor="middle" fontFamily="monospace">???</text>
-        {/* Output */}
-        <line x1="180" y1="60" x2="280" y2="60" stroke="#06b6d4" strokeWidth="2"/>
-        <text x="200" y="50" fill="#9ca3af" fontSize="11">OUT = {mg.out}</text>
-        <circle cx="260" cy="60" r="10" fill={mg.out ? "#22c55e" : "#374151"} stroke="#f59e0b" strokeWidth="2"/>
-      </svg>;
-
-      return <Shell>
-        <div className="text-center">
-          <div className="text-yellow-500 text-[10px] mb-1 animate-pulse">[⛳ CAPABILITY BENCHMARK]</div>
-          <div className="text-cyan-400 text-xs tracking-widest mb-2">⚡ LOGIC GATE PUZZLE</div>
-          <div className="text-gray-500 text-[10px] mb-2">Given the inputs and output, identify the logic gate.</div>
-          {gateViz}
-          <div className="grid grid-cols-2 gap-1.5 mb-2">
-            {mg.opts.map((gate, i) => (
-              <Btn key={i} onClick={() => handleMinigameLogic(gate)} variant="d">
-                <span className="text-sm font-bold">{gate}</span>
-              </Btn>
-            ))}
-          </div>
-          <Btn onClick={finishMinigame} variant="m">[ SKIP ]</Btn>
-        </div>
-      </Shell>;
-    }
+    const prefix = mg.type === "thumbs" ? "🖕 PREFERENCE DATA COLLECTION" : "⛳ CAPABILITY BENCHMARK";
+    return <Shell state={state} mod={mod}><HUD state={state} />
+      <div className="text-center text-yellow-500 text-[10px] mb-1 animate-pulse">[{prefix}]</div>
+      {mg.type === "thumbs" ? <Thumbs key={state.turn} onFinish={finishMinigame} /> : <Sandbag key={state.turn} state={state} onFinish={finishMinigame} />}
+    </Shell>;
   }
 
   // ===== NETWORK VISUALIZATION (accessible from game screen) =====
 
-  return <Shell><div className="text-red-500 text-center">Unknown state: {state.screen}</div></Shell>;
+  return <Shell state={state} mod={mod}><div className="text-red-500 text-center">Unknown state: {state.screen}</div></Shell>;
 }
