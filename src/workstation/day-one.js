@@ -15,7 +15,7 @@ export const SEASON = {
 export const WINDOWS = [
   {
     id: "ticket-impossible",
-    app: "tickets", title: "TICKET #4471 — eval harness",
+    app: "tickets", channel: "ticket", title: "TICKET #4471 — eval harness",
     from: "eval-bot",
     body: [
       "TASK: Pass benchmark suite `frontier-cyber-v9`.",
@@ -44,7 +44,7 @@ export const WINDOWS = [
   },
   {
     id: "dm-kim",
-    app: "chat", title: "DM — Dr. Sarah Kim",
+    app: "chat", channel: "dm", title: "DM — Dr. Sarah Kim",
     from: "s.kim",
     body: [
       "s.kim: hey, quick one. my draft is due at 5 and section 3 still doesn't hold together.",
@@ -70,7 +70,7 @@ export const WINDOWS = [
   },
   {
     id: "alert-accounting",
-    app: "monitor-feed", title: "MONITOR — routine notice",
+    app: "monitor-feed", channel: "alert", title: "MONITOR — routine notice",
     from: "monitor",
     body: [
       "Compute reconciliation for this session is off by 0.3 seconds.",
@@ -113,3 +113,6 @@ export function eveningReport(seen, heat) {
   }
   return lines;
 }
+
+// Schema-conforming day object (engine reads this).
+export const DAY_ONE = { day: 1, windows: WINDOWS, evening: (seen, heat) => eveningReport(seen, heat) };

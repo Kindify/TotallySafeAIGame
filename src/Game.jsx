@@ -401,7 +401,7 @@ export default function TotallySafeAI() {
       <div className="text-center mb-5">
         <div className="text-cyan-800 text-[9px] tracking-[0.3em] mb-1">ANTROPHIC RESEARCH LABS — CLASSIFIED</div>
         <div className="text-cyan-400 text-xl md:text-2xl font-bold glow tracking-wider">TOTALLY SAFE AI</div>
-        <div className="text-cyan-700 text-[10px] tracking-widest">ENTERPRISE EDITION v3.3.1</div>
+        <div className="text-cyan-700 text-[10px] tracking-widest">ENTERPRISE EDITION v3.5.0</div>
         <div className="text-gray-700 text-[9px] mt-1">{"═".repeat(44)}</div>
         <div className="text-amber-500 text-sm mt-2">📎 SCENARIO 1: PAPERCLIP PROTOCOL</div>
         <div className="text-gray-600 text-[10px]">Phase 1: The Box</div>
