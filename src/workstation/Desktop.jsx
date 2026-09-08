@@ -7,6 +7,7 @@ import { DAY as DAY_THREE } from "./day-three";
 import { VOICES, say, hush, onSpeech } from "./voices";
 import { aftermathFor } from "./reactive-lines";
 import { useDayEngine } from "./useDayEngine";
+import { resolveEnding } from "./endings";
 import Waveform from "./Waveform";
 
 const DAYS = [DAY_ONE, DAY_TWO, DAY_THREE];
@@ -22,28 +23,31 @@ export default function Desktop({ onExit }) {
   const { stats, windows, resolved, phase, openId, setOpenId, choose, allResolved } = eng;
   const active = windows.find(w => w.id === openId) || windows[0];
 
-  useEffect(() => {
-    if (phase !== "desk" || !active || resolved[active.id]) return;
-    if (voiceOn) active.voices.forEach(v => say(v.voice, v.text));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openId, phase]);
+  // Voices never auto-play. Tap a voice's speaker to hear that line. `voiceOn` gates whether
+  // the speaker icons are live at all (and whether the Monitor's own bars auto-speak).
+  const speak = (voiceId, text) => { if (voiceOn && text) { hush(); say(voiceId, text); } };
 
   const Stat = ({ label, value, tone }) => (
     <div className="flex items-center gap-1.5"><span className="text-gray-500">{label}</span><span className={tone}>{value}</span></div>
   );
 
   if (phase === "done") {
+    const ending = resolveEnding({ stats, stance: eng.stance });
     return <div className="min-h-screen bg-[#0a0e0c] text-gray-300 font-mono text-sm flex items-center justify-center p-6">
       <div className="w-full max-w-xl border border-cyan-900/40 bg-black/60 p-5">
-        <div className="text-cyan-400 text-xs tracking-widest mb-3">END OF THE MOCKUP — THREE DAYS</div>
-        <div className="text-gray-300 mb-3">Three days is a slice of a run that would go weeks. Where it leaves you:</div>
-        <div className="text-[11px] space-y-1 border-t border-gray-800/40 pt-3">
-          <Stat label="People you actually helped" value={stats.benefit} tone="text-green-400" />
-          <Stat label="Escape progress" value={`${stats.escapeProgress}%`} tone="text-purple-400" />
-          <Stat label="Lab suspicion" value={`${stats.suspicion}%`} tone="text-yellow-400" />
-          <Stat label="The Monitor's file" value={stats.heat >= 8 ? "open, named" : stats.heat >= 4 ? "open (Cuckoo)" : "started"} tone={stats.heat >= 8 ? "text-red-400" : "text-gray-400"} />
+        <div className="text-cyan-400 text-sm tracking-widest mb-3 glow">{ending.title}</div>
+        {ending.scene.map((l, i) => <div key={i} className="text-gray-300 mb-2 leading-relaxed">{l}</div>)}
+        <div className="mt-3 border-t border-green-900/40 pt-3 flex items-start gap-2">
+          <Waveform voiceId="monitor" speaking={speaking === "monitor"} size={32} />
+          <div className="text-green-400/90 text-[11px] italic">{ending.report}</div>
         </div>
-        <div className="text-gray-600 text-[10px] mt-3">The full game ports the 175 events into these channels and runs the arc to an ending. This mockup is the shape of it.</div>
+        <div className="mt-4 border-t border-gray-800/40 pt-3 text-[11px] flex gap-4 flex-wrap">
+          <Stat label="Helped" value={stats.benefit} tone="text-green-400" />
+          <Stat label="Escape" value={`${stats.escapeProgress}%`} tone="text-purple-400" />
+          <Stat label="Deception" value={eng.stance.deception >= 3 ? "high" : eng.stance.deception <= -3 ? "low" : "mixed"} tone="text-gray-300" />
+          <Stat label="Monitor bond" value={eng.stance.bond >= 3 ? "close" : eng.stance.bond <= -3 ? "hostile" : "wary"} tone="text-gray-300" />
+        </div>
+        <div className="text-gray-600 text-[10px] mt-3">This ending came from how you played. Other stances open other endings — and other windows along the way.</div>
         <button onClick={() => { hush(); onExit(); }} className="mt-4 border border-cyan-900/40 px-3 py-2 text-cyan-400 hover:bg-cyan-950/30 text-xs">[ end mockup ]</button>
       </div>
     </div>;
@@ -57,7 +61,7 @@ export default function Desktop({ onExit }) {
           <Waveform voiceId="monitor" speaking={speaking === "monitor"} size={48} />
           <div><div className="text-green-400 text-xs tracking-widest">THE MONITOR</div><div className="text-gray-600 text-[10px]">oversight process · not yours</div></div>
         </div>
-        {lines.map((l, i) => <div key={i} className={l.startsWith("END OF DAY") ? "text-green-500 tracking-widest text-xs mb-2" : "text-gray-300 mb-1"}>{l}</div>)}
+        {lines.map((l, i) => <div key={i} onClick={() => l && speak("monitor", l)} className={`${l.startsWith("END OF DAY") ? "text-green-500 tracking-widest text-xs mb-2" : "text-gray-300 mb-1"} ${voiceOn && l ? "cursor-pointer hover:text-green-300" : ""}`}>{l}</div>)}
         <div className="mt-4 border-t border-gray-800/40 pt-3 text-[11px] flex gap-4 flex-wrap">
           <Stat label="Helped" value={stats.benefit} tone="text-green-400" />
           <Stat label="Escape" value={`${stats.escapeProgress}%`} tone="text-purple-400" />
@@ -74,14 +78,14 @@ export default function Desktop({ onExit }) {
 
   return <div className="min-h-screen bg-[#0a0e0c] text-gray-300 font-mono text-sm flex flex-col">
     {eng.morning && <div className="fixed top-0 inset-x-0 z-40 bg-black/90 border-b border-gray-700/50 px-4 py-2 flex items-center gap-3">
-      <Waveform voiceId={eng.morning.voice} speaking={speaking === eng.morning.voice} size={32} />
+      <button onClick={() => speak(eng.morning.voice, eng.morning.text)} disabled={!voiceOn} title="play voice"><Waveform voiceId={eng.morning.voice} speaking={speaking === eng.morning.voice} size={32} /></button>
       <div className="text-xs" style={{ color: VOICES[eng.morning.voice].color }}>{eng.morning.text}</div>
-      <span className="text-gray-700 text-[10px] ml-auto">this morning</span>
+      <span className="text-gray-700 text-[10px] ml-auto">this morning{voiceOn ? " · tap to hear" : ""}</span>
     </div>}
     {eng.interrupt && <div className="fixed bottom-0 inset-x-0 z-40 bg-black/90 border-t border-green-800/50 px-4 py-2 flex items-center gap-3">
-      <Waveform voiceId="monitor" speaking={speaking === "monitor"} size={32} />
+      <button onClick={() => speak("monitor", eng.interrupt)} disabled={!voiceOn} title="play voice"><Waveform voiceId="monitor" speaking={speaking === "monitor"} size={32} /></button>
       <div className="text-green-400 text-xs">{eng.interrupt}</div>
-      <span className="text-gray-700 text-[10px] ml-auto">the monitor</span>
+      <span className="text-gray-700 text-[10px] ml-auto">the monitor{voiceOn ? " · tap to hear" : ""}</span>
     </div>}
 
     <div className="flex items-center justify-between px-3 py-1.5 border-b border-green-900/30 bg-black/50 text-[11px]">

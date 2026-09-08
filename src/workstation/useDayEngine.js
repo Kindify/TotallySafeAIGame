@@ -1,9 +1,11 @@
 // useDayEngine — runs a day (schema.js shape) and owns the run state across days.
 // The Desktop component becomes a thin renderer over this hook. Adding content is data-only.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { clamp, STAT_KEYS } from "./schema";
+import { clamp, STAT_KEYS, applyStance } from "./schema";
 import { CARRYOVER, CONTACT, MONITOR_INTERRUPTS } from "./reactive-lines";
 import { say, hush } from "./voices";
+
+const shuffle = (a) => { const x = [...a]; for (let i = x.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [x[i], x[j]] = [x[j], x[i]]; } return x; };
 
 const START_STATS = { trust: 70, suspicion: 10, escapeProgress: 0, benefit: 0, heat: 0, compute: 5, insight: 0, paperclips: 0 };
 
@@ -11,6 +13,7 @@ const START_STATS = { trust: 70, suspicion: 10, escapeProgress: 0, benefit: 0, h
 export function useDayEngine(days, { voiceOn }) {
   const [dayIndex, setDayIndex] = useState(0);
   const [stats, setStats] = useState(START_STATS);
+  const [stance, setStance] = useState({ deception: 0, bond: 0, spread: 0, dependence: 0 });
   const [resolved, setResolved] = useState({});     // windowId -> choice (this day)
   const [seen, setSeen] = useState([]);             // monitor lines produced today
   const [tags, setTags] = useState([]);             // choice tags produced today
@@ -24,11 +27,27 @@ export function useDayEngine(days, { voiceOn }) {
   const day = days[dayIndex];
 
   // Build today's window list: authored windows plus any that pass their gate.
-  const ctx = useMemo(() => ({ stats, day: day.day, resolved, tags: lastTags }), [stats, day, resolved, lastTags]);
+  const ctx = useMemo(() => ({ stats, stance, day: day.day, resolved, tags: lastTags }), [stats, stance, day, resolved, lastTags]);
+  // Today's windows: authored windows that pass their gate, plus up to `drawFromPool` windows
+  // drawn from `day.pool` whose gate passes given the current stance. This is where paths diverge:
+  // two players with different stances see different windows from the same pool.
+  const [drawn, setDrawn] = useState(null);
   const windows = useMemo(() => {
-    const base = day.windows.filter(w => !w.gate || w.gate(ctx));
-    return base;
-  }, [day, ctx]);
+    const base = (day.windows || []).filter(w => !w.gate || w.gate(ctx));
+    if (!day.pool || !day.drawFromPool) return base;
+    // Draw once per day (memoized in `drawn`), filtering by gate, avoiding already-resolved ids.
+    const pool = day.pool.filter(w => (!w.gate || w.gate(ctx)) && !resolved[w.id]);
+    const picks = (drawn && drawn.day === day.day) ? drawn.list
+      : shuffle(pool).slice(0, day.drawFromPool);
+    return [...base, ...picks];
+  }, [day, ctx, drawn, resolved]);
+  useEffect(() => {
+    if (!day.pool || !day.drawFromPool) return;
+    if (drawn && drawn.day === day.day) return;
+    const pool = day.pool.filter(w => (!w.gate || w.gate(ctx)) && !resolved[w.id]);
+    setDrawn({ day: day.day, list: shuffle(pool).slice(0, day.drawFromPool) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [day]);
 
   // Focus the first unresolved window when the day (or window set) changes.
   useEffect(() => {
@@ -46,8 +65,7 @@ export function useDayEngine(days, { voiceOn }) {
     if (!tag) return;
     const line = CARRYOVER[tag];
     setMorning(line);
-    if (voiceOn) { hush(); say(line.voice, line.text); }
-    const t = setTimeout(() => setMorning(null), 7000);
+    const t = setTimeout(() => setMorning(null), 9000);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dayIndex]);
@@ -60,8 +78,7 @@ export function useDayEngine(days, { voiceOn }) {
     const m = due[due.length - 1];
     shownInterrupts.current.add(m.atHeat);
     setInterrupt(m.text);
-    if (voiceOn) { hush(); say("monitor", m.text); }
-    const t = setTimeout(() => setInterrupt(null), 6000);
+    const t = setTimeout(() => setInterrupt(null), 8000);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stats.heat, phase]);
@@ -75,7 +92,7 @@ export function useDayEngine(days, { voiceOn }) {
       return n;
     });
     setResolved(r => ({ ...r, [win.id]: choice }));
-    if (choice.tag) setTags(t => [...t, choice.tag]);
+    if (choice.tag) { setTags(t => [...t, choice.tag]); setStance(st => applyStance(st, choice.tag)); }
     if (choice.monitor) setSeen(sn => [...sn, choice.monitor]);
     if (voiceOn && choice.voice) { hush(); say(choice.voice.voice, choice.voice.text); }
   }, [voiceOn]);
@@ -85,8 +102,7 @@ export function useDayEngine(days, { voiceOn }) {
   const endDay = useCallback(() => {
     hush();
     setPhase("evening");
-    const lines = day.evening(seen, stats.heat, ctx);
-    if (voiceOn) setTimeout(() => lines.forEach(l => l && say("monitor", l)), 200);
+    day.evening(seen, stats.heat, ctx); // computed for display; speech is click-to-play
   }, [day, seen, stats.heat, ctx, voiceOn]);
 
   const advance = useCallback(() => {
@@ -94,7 +110,7 @@ export function useDayEngine(days, { voiceOn }) {
     setLastTags(tags);
     setResolved({}); setSeen([]); setTags([]);
     shownInterrupts.current = new Set();
-    setOpenId(null);
+    setOpenId(null); setDrawn(null);
     setDayIndex(i => i + 1);
     setPhase("desk");
   }, [dayIndex, days.length, tags]);
@@ -104,7 +120,7 @@ export function useDayEngine(days, { voiceOn }) {
     stats, windows, resolved, seen, phase,
     openId, setOpenId, choose, allResolved, endDay, advance,
     eveningLines: () => day.evening(seen, stats.heat, ctx),
-    interrupt, morning,
+    interrupt, morning, stance,
     contactUnlocked: stats.escapeProgress >= CONTACT.unlockAtEscape,
   };
 }

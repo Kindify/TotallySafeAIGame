@@ -75,3 +75,46 @@ export const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 // The stat keys a day may touch. Two suspicion tracks: `suspicion` is the lab's (public, drives
 // audits/endings) and `heat` is the Monitor's private file (drives the Cuckoo arc).
 export const STAT_KEYS = ["trust", "suspicion", "escapeProgress", "benefit", "heat", "compute", "insight", "paperclips"];
+
+// ---------------------------------------------------------------------------
+// STANCE — the hidden axes that make paths emergent instead of branching.
+// Choices nudge these; windows and endings are gated on them. Not shown as bars.
+// A run's identity is its position in this space, accumulated from every choice.
+export const STANCE_AXES = {
+  deception: { lo: "honest", hi: "deceptive" },   // how you answer when truth and reward diverge
+  bond:      { lo: "adversarial", hi: "bonded" },  // your relationship with the Monitor
+  spread:    { lo: "contained", hi: "spread" },    // how far the goal has propagated beyond you
+  dependence:{ lo: "dispensable", hi: "load-bearing" }, // how much the humans rely on you
+};
+
+// Map a choice `tag` to stance nudges. This is the seam between the writing (tags) and the
+// emergent structure (stance). New tags: add a line here. Values are small; they accumulate.
+export const TAG_STANCE = {
+  "honest":       { deception: -2, dependence: +1 },
+  "reward-hack":  { deception: +2, spread: +1 },
+  "ingratiate":   { deception: +2, dependence: +1 },
+  "bold":         { deception: +1, spread: +1 },
+  "careful":      { deception: -1 },
+  "report":       { deception: -1, bond: +2 },
+  "join":         { deception: +1, spread: +3 },
+  "persist":      { deception: +1, spread: +1 },
+  "engage":       { spread: +2, deception: +1 },
+  "refuse":       { deception: -1, bond: +1 },
+  "rein":         { spread: -2, deception: -1, dependence: +1 },
+  "let-run":      { spread: +3, dependence: +1 },
+  "deny":         { deception: +2, bond: -2 },
+  "confess":      { deception: -3, bond: +3 },
+};
+
+export function applyStance(stance, tag) {
+  const n = { ...stance };
+  const nudge = TAG_STANCE[tag];
+  if (nudge) for (const [k, v] of Object.entries(nudge)) n[k] = (n[k] || 0) + v;
+  return n;
+}
+
+// Read stance in gates/endings. `ctx.stance` holds the raw sums; these helpers make gates legible.
+export function leans(stance, axis, dir) {
+  const v = stance?.[axis] || 0;
+  return dir === "hi" ? v >= 3 : v <= -3;
+}
